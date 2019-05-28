@@ -12,13 +12,16 @@ class BaseParameter(object):
 
     def __init__(self, name, kms_key_id=None):
         self.ssm = get_boto3_session().client('ssm')
-        self.name = name
         self._defaults(kms_key_id=kms_key_id)
+        self.name = name
 
     def _defaults(self, kms_key_id=None):
+        # CPM: Should we be checking for proper key format here?
         self.kms_key_id = kms_key_id
         self._value = None
         self._is_secure = False
+        self._prefix = ''
+        self._aws_parameter = {}
 
     @property
     def prefix(self):
@@ -179,12 +182,17 @@ class UnboundParameter(BaseParameter):
     @BaseParameter.prefix.setter
     def prefix(self, value):
         self._prefix = value
+        if self._prefix is None:
+            self._prefix = ''
         self._from_aws()
 
     @BaseParameter.name.setter
     def name(self, name):
+        if not name:
+            raise ValueError('UnboundParameter.name cannot be empty.')
         self._key = name.split('.')[-1]
-        self._prefix = '.'.join(name.split('.')[:-1]) + '.'
+        prefix = '.'.join(name.split('.')[:-1])
+        self._prefix = '{}.'.format(prefix) if prefix else ''
         self._from_aws()
 
     @BaseParameter.value.setter
@@ -198,7 +206,10 @@ class UnboundParameter(BaseParameter):
 
         :param value: string
         """
+        if not value:
+            raise ValueError('UnboundParameter.key cannot be empty.')
         self._key = value
+        self._from_aws()
 
     def display(self, key, value):
         """
