@@ -48,6 +48,25 @@ class TestUnboundParameter__render(unittest.TestCase):
 
 class TestUnboundParameter__is_secure(unittest.TestCase):
 
+    def get_mock_boto3_session(self, type):
+        get_parameters = Mock(return_value={'Parameters': [{'Type': type}]})
+        ssm_mock = Mock()
+        ssm_mock.get_parameters = get_parameters
+        client_mock = Mock(return_value=ssm_mock)
+        session_mock = Mock()
+        session_mock.client = client_mock
+        fake_boto3_session = Mock(return_value=session_mock)
+        return fake_boto3_session
+
+    def setUp(self):
+        get_parameters = Mock(return_value={'Parameters': [{'Value': 'my_aws_value'}]})
+        ssm_mock = Mock()
+        ssm_mock.get_parameters = get_parameters
+        client_mock = Mock(return_value=ssm_mock)
+        session_mock = Mock()
+        session_mock.client = client_mock
+        self.fake_boto3_session = Mock(return_value=session_mock)
+
     def test__is_secure_no_key_no_aws_object_returns_False(self):
         with Replacer() as r:
             r.replace('deployfish.aws.systems_manager.UnboundParameter._from_aws', Mock())
@@ -62,23 +81,29 @@ class TestUnboundParameter__is_secure(unittest.TestCase):
 
     def test__is_secure_no_key_with_un_secure_aws_object_returns_False(self):
         with Replacer() as r:
-            r.replace('deployfish.aws.systems_manager.UnboundParameter._from_aws', Mock())
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                self.get_mock_boto3_session('String')
+            )
             p = UnboundParameter('foo.bar.BAZ')
-            p._aws_parameter = {'Type': 'String'}
             self.assertFalse(p.is_secure)
 
     def test__is_secure_no_key_with_secure_aws_object_returns_True(self):
         with Replacer() as r:
-            r.replace('deployfish.aws.systems_manager.UnboundParameter._from_aws', Mock())
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                self.get_mock_boto3_session('SecureString')
+            )
             p = UnboundParameter('foo.bar.BAZ')
-            p._aws_parameter = {'Type': 'SecureString'}
             self.assertTrue(p.is_secure)
 
     def test__is_secure_with_key_with_secure_aws_object_returns_True(self):
         with Replacer() as r:
-            r.replace('deployfish.aws.systems_manager.UnboundParameter._from_aws', Mock())
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                self.get_mock_boto3_session('SecureString')
+            )
             p = UnboundParameter('foo.bar.BAZ', kms_key_id='my_key')
-            p._aws_parameter = {'Type': 'SecureString'}
             self.assertTrue(p.is_secure)
 
 
@@ -228,3 +253,132 @@ class TestUnboundParameter__key(unittest.TestCase):
             p = UnboundParameter('BAZ')
             p.key = 'BARNEY'
             compare(from_aws.mock_calls, [call(), call()])
+
+
+class TestUnboundParameter__value(unittest.TestCase):
+
+    def setUp(self):
+        get_parameters = Mock(return_value={'Parameters': [{'Value': 'my_aws_value'}]})
+        ssm_mock = Mock()
+        ssm_mock.get_parameters = get_parameters
+        client_mock = Mock(return_value=ssm_mock)
+        session_mock = Mock()
+        session_mock.client = client_mock
+        self.fake_boto3_session = Mock(return_value=session_mock)
+
+    def test_get_value_returns_None_if_no_aws_object_and_no_user_set_value(self):
+        with Replacer() as r:
+            r.replace('deployfish.aws.systems_manager.UnboundParameter._from_aws', Mock())
+            p = UnboundParameter('foo.bar.BAZ')
+            self.assertEqual(p.value, None)
+
+    def test_get_value_returns_aws_value_if_aws_object_and_no_user_set_value(self):
+        with Replacer() as r:
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session', self.fake_boto3_session
+            )
+            p = UnboundParameter('foo.bar.BAZ')
+            self.assertEqual(p.value, 'my_aws_value')
+
+    def test_set_value_sets_value(self):
+        with Replacer() as r:
+            r.replace('deployfish.aws.systems_manager.UnboundParameter._from_aws', Mock())
+            p = UnboundParameter('foo.bar.BAZ')
+            self.assertEqual(p.value, None)
+            p.value = 'foo'
+            self.assertEqual(p.value, 'foo')
+
+
+class TestUnboundParameter__exists(unittest.TestCase):
+
+    def get_mock_boto3_session(self, response=None):
+        if response is None:
+            response = {'Parameters': []}
+        get_parameters = Mock(return_value=response)
+        ssm_mock = Mock()
+        ssm_mock.get_parameters = get_parameters
+        client_mock = Mock(return_value=ssm_mock)
+        session_mock = Mock()
+        session_mock.client = client_mock
+        fake_boto3_session = Mock(return_value=session_mock)
+        return fake_boto3_session
+
+    def test_get_exists_returns_False_if_no_aws_object(self):
+        with Replacer() as r:
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                self.get_mock_boto3_session()
+            )
+            p = UnboundParameter('foo.bar.BAZ')
+            self.assertFalse(p.exists)
+
+    def test_get_exists_returns_True_if_aws_object(self):
+        with Replacer() as r:
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                self.get_mock_boto3_session(response={'Parameters': [{'Type': 'String'}]})
+            )
+            p = UnboundParameter('foo.bar.BAZ')
+            self.assertTrue(p.exists)
+
+
+class TestUnboundParameter__save(unittest.TestCase):
+
+    def get_mock_boto3_session(self, response=None):
+        if response is None:
+            response = {'Parameters': []}
+        get_parameters = Mock(return_value=response)
+        put_parameter = Mock()
+        ssm_mock = Mock()
+        ssm_mock.get_parameters = get_parameters
+        ssm_mock.put_parameter = put_parameter
+        client_mock = Mock(return_value=ssm_mock)
+        session_mock = Mock()
+        session_mock.client = client_mock
+        fake_boto3_session = Mock(return_value=session_mock)
+        return (fake_boto3_session, put_parameter)
+
+    def test_save_saves_if_no_aws_object(self):
+        fake_boto3_session, put_parameter = self.get_mock_boto3_session()
+        with Replacer() as r:
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                fake_boto3_session
+            )
+            p = UnboundParameter('foo.bar.BAZ', kms_key_id='my_key')
+            p.value = 'foobar'
+            p.save()
+            put_parameter.assert_called_once()
+            compare(
+                put_parameter.call_args,
+                call(Name='foo.bar.BAZ', Value='foobar', Overwrite=True, Type='SecureString', KeyId='my_key')
+            )
+
+    def test_save_throws_ValueError_if_aws_object_and_not_overwrite(self):
+        fake_boto3_session, put_parameter = self.get_mock_boto3_session(response={'Parameters': [{'Type': 'String'}]})
+        with Replacer() as r:
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                fake_boto3_session
+            )
+            p = UnboundParameter('foo.bar.BAZ', kms_key_id='my_key')
+            p.value = 'foobar'
+            with self.assertRaises(ValueError):
+                p.save()
+            put_parameter.assert_not_called()
+
+    def test_save_saves_if_aws_object_and_overwrite(self):
+        fake_boto3_session, put_parameter = self.get_mock_boto3_session(response={'Parameters': [{'Type': 'String'}]})
+        with Replacer() as r:
+            r.replace(
+                'deployfish.aws.systems_manager.get_boto3_session',
+                fake_boto3_session
+            )
+            p = UnboundParameter('foo.bar.BAZ', kms_key_id='my_key')
+            p.value = 'foobar'
+            p.save(overwrite=True)
+            put_parameter.assert_called_once()
+            compare(
+                put_parameter.call_args,
+                call(Name='foo.bar.BAZ', Value='foobar', Overwrite=True, Type='SecureString', KeyId='my_key')
+            )

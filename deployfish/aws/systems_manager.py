@@ -74,7 +74,7 @@ class BaseParameter(object):
         """
         if self._aws_parameter:
             self._is_secure = self._aws_parameter['Type'] == "SecureString"
-        elif self.kms_key_id:
+        if self.kms_key_id:
             self._is_secure = True
         return self._is_secure
 
@@ -101,8 +101,8 @@ class BaseParameter(object):
 
     def _from_aws(self):
         """
-        Return the current value of the parameter named by ``self.key`` as it
-        exists in AWS.  If such a parameter does not exist, raise ``KeyError``.
+        Set the value of ``self._aws_parameter`` to the data for that parameter from AWS, if
+        that parameter exists in AWS, otherwise set ``self._aws_parameter`` to ``{}``
         """
         self._aws_parameter = {}
         response = self.ssm.get_parameters(**self._render_read())
@@ -432,7 +432,7 @@ class Parameter(ClusterServicePrefixMixin, BaseParameter):
         return self.display(self.key, self.value)
 
 
-class UnboundParameterFactory:
+class UnboundParameterFactory(object):
 
     @staticmethod
     def new(name):
