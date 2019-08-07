@@ -76,6 +76,7 @@ class Service(object):
         self._maximumPercent = None
         self._launchType = 'EC2'
         self.__service_discovery = []
+        self._ecr_repos = []
         self.__defaults()
         self.from_yaml(yml)
         self.from_aws()
@@ -591,6 +592,9 @@ class Service(object):
             parameters = yml['config']
         self.parameter_store = ParameterStore(self._serviceName, self._clusterName, yml=parameters)
 
+        if 'ecr-repositories' in yml:
+            self._ecr_repos = yml['ecr-repositories']
+
     def from_aws(self):
         """
         Update our service definition, task definition and tasks from the live
@@ -640,6 +644,18 @@ class Service(object):
         """
         Create the service in AWS.  If necessary, setup Application Scaling afterwards.
         """
+        if self._ecr_repos:
+            ecr = get_boto3_session().client('ecr')
+            for repo in self._ecr_repos:
+                repo_name = repo['name']
+                tags = repo.get('tags', [])
+                try:
+                    ecr.create_repository(repositoryName=repo_name, tags=tags)
+                except ecr.exceptions.RepositoryAlreadyExistsException:
+                    print('ECR repository {repo_name} already exists, skipping.'.format(
+                        repo_name=repo_name
+                    ))
+
         if self.serviceDiscovery is not None:
             if not self.serviceDiscovery.exists():
                 self.service_discovery = self.serviceDiscovery.create()
@@ -734,6 +750,21 @@ class Service(object):
                 cluster=self.clusterName,
                 service=self.serviceName,
             )
+        if self._ecr_repos:
+            ecr = get_boto3_session().client('ecr')
+            for repo in self._ecr_repos:
+                repo_name = repo['name']
+                to_delete = repo.get('delete_with_service')
+                try:
+                    if to_delete:
+                        print('Deleting ECR repository: {repo_name}'.format(repo_name=repo_name))
+                        ecr.delete_repository(repositoryName=repo_name)
+                    else:
+                        print('ECR repository {repo_name} marked as skippable, leaving as-is'.format(repo_name=repo_name))
+                except ecr.exceptions.RepositoryNotFoundException:
+                    print('ECR repository {repo_name} does not exist, skipping.'.format(
+                        repo_name=repo_name
+                    ))
 
     def _show_current_status(self):
         response = self.__get_service()

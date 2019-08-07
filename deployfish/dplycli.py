@@ -20,6 +20,8 @@ def print_service_info(service):
     click.secho('    service_name        : {}'.format(service.serviceName), fg="cyan")
     click.secho('    cluster_name        : {}'.format(service.clusterName), fg="cyan")
     click.secho('    count               : {}'.format(service.count), fg="cyan")
+    if service._ecr_repos:
+        click.secho('    ecr_repos           : {}'.format(service._ecr_repos), fg="cyan")
     if service.asg.exists():
         click.secho('    autoscaling group:', fg="cyan")
         click.secho('      name              : {}'.format(service.asg.name), fg="cyan")
