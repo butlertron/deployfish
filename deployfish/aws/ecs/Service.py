@@ -28,6 +28,13 @@ from .Task import TaskDefinition
 from .Task import HelperTask
 
 
+def _capitalize_keys_in_list(orig_list):
+    l = []
+    for d in orig_list:
+        l.append(dict((k.capitalize(), v) for k, v in d.items()))
+    return l
+
+
 class Service(object):
     """
     An object representing an ECS service.
@@ -661,16 +668,13 @@ class Service(object):
         docker_client.api.push(repository=self._push_image, tag=self._push_tag)
         print('Image pushed!')
 
-    def create(self):
-        """
-        Create the service in AWS.  If necessary, setup Application Scaling afterwards.
-        """
+    def __create_ecr_repo_and_push(self):
         if self._ecr_repo:
             ecr = get_boto3_session().client('ecr')
             repo_name = self._ecr_repo['name']
             tags = self._ecr_repo.get('tags', [])
             try:
-                ecr.create_repository(repositoryName=repo_name, tags=tags)
+                ecr.create_repository(repositoryName=repo_name, tags=_capitalize_keys_in_list(tags))
             except ecr.exceptions.RepositoryAlreadyExistsException:
                 print('ECR repository {repo_name} already exists, skipping.'.format(
                     repo_name=repo_name
@@ -678,6 +682,12 @@ class Service(object):
 
             if self._push_image and self._push_tag:
                 self.push_ecr_image()
+
+    def create(self):
+        """
+        Create the service in AWS.  If necessary, setup Application Scaling afterwards.
+        """
+        self.__create_ecr_repo_and_push()
 
         if self.serviceDiscovery is not None:
             if not self.serviceDiscovery.exists():
@@ -712,9 +722,7 @@ class Service(object):
         """
         Update the taskDefinition and deploymentConfiguration on the service.
         """
-        if self._ecr_repo and self._push_image and self._push_tag:
-            self.push_ecr_image()
-
+        self.__create_ecr_repo_and_push()
         self.__create_tasks_and_task_definition()
         self.ecs.update_service(
             cluster=self.clusterName,
@@ -783,7 +791,7 @@ class Service(object):
             try:
                 if to_delete:
                     print('Deleting ECR repository: {repo_name}'.format(repo_name=repo_name))
-                    ecr.delete_repository(repositoryName=repo_name)
+                    ecr.delete_repository(repositoryName=repo_name, force=True)
                 else:
                     print('ECR repository {repo_name} marked as skippable, leaving as-is'.format(repo_name=repo_name))
             except ecr.exceptions.RepositoryNotFoundException:
