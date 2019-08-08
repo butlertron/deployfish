@@ -20,6 +20,8 @@ def print_service_info(service):
     click.secho('    service_name        : {}'.format(service.serviceName), fg="cyan")
     click.secho('    cluster_name        : {}'.format(service.clusterName), fg="cyan")
     click.secho('    count               : {}'.format(service.count), fg="cyan")
+    if service._ecr_repo:
+        click.secho('    ecr_repo           : {}'.format(service._ecr_repo), fg="cyan")
     if service.asg.exists():
         click.secho('    autoscaling group:', fg="cyan")
         click.secho('      name              : {}'.format(service.asg.name), fg="cyan")
@@ -173,12 +175,22 @@ def manage_asg_count(service, count, asg, force_asg):
     default=False,
     help="Force your ASG to scale outside of its MinCount or MaxCount"
 )
+@click.option(
+    '--push-image',
+    default=None,
+    help="Push specified image to the ECR repo(s). The repository(ies) must be described in the YML file. Also requires --push-tag option."
+)
+@click.option(
+    '--push-tag',
+    default=None,
+    help="Tag to use for pushed image. Required when using --push-image."
+)
 @needs_config
-def create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg):
+def create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg, push_image, push_tag):
     """
     Create a new ECS service named SERVICE_NAME.
     """
-    service = Service(service_name, config=ctx.obj['CONFIG'])
+    service = Service(service_name, config=ctx.obj['CONFIG'], push_image=push_image, push_tag=push_tag)
     print()
     if service.exists():
         click.secho('Service "{}" already exists!'.format(service.serviceName), fg='red')
@@ -265,8 +277,18 @@ def version(ctx, service_name):
     default=True,
     help="Don't exit until all tasks are running the new task definition revision"
 )
+@click.option(
+    '--push-image',
+    default=None,
+    help="Push specified image to the ECR repo(s). The repository(ies) must be described in the YML file. Also requires --push-tag option."
+)
+@click.option(
+    '--push-tag',
+    default=None,
+    help="Tag to use for pushed image. Required when using --push-image."
+)
 @needs_config
-def update(ctx, service_name, dry_run, wait):
+def update(ctx, service_name, dry_run, wait, push_image, push_tag):
     """
     Update the our ECS service from what is in deployfish.yml.  This means two things:
 
@@ -283,7 +305,7 @@ def update(ctx, service_name, dry_run, wait):
 
     If you want to update the desiredCount on the service, use "deploy scale".
     """
-    service = Service(service_name, config=ctx.obj['CONFIG'])
+    service = Service(service_name, config=ctx.obj['CONFIG'], push_image=push_image, push_tag=push_tag)
     print()
     click.secho('Updating "{}" service:'.format(service.serviceName), fg="white")
     click.secho('  Current task definition:', fg="yellow")

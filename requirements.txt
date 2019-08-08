@@ -2,6 +2,7 @@ awscli
 boto3
 bumpversion
 click
+docker
 mock
 nose
 PyYaml
