@@ -609,6 +609,8 @@ class Service(object):
 
         if 'ecr-repository' in yml:
             self._ecr_repo = yml['ecr-repository']
+            if not self._ecr_repo.get('name'):
+                raise RuntimeError('Missing name for ECR repository!')
 
     def from_aws(self):
         """
@@ -673,6 +675,9 @@ class Service(object):
             ecr = get_boto3_session().client('ecr')
             repo_name = self._ecr_repo['name']
             tags = self._ecr_repo.get('tags', [])
+            for t in tags:
+                if not t.get('key') or not t.get('value'):
+                    raise RuntimeError('Missing key or value for ECR repository tag!')
             try:
                 ecr.create_repository(repositoryName=repo_name, tags=_capitalize_keys_in_list(tags))
             except ecr.exceptions.RepositoryAlreadyExistsException:
