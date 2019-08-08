@@ -25,6 +25,16 @@ from deployfish.aws.service_discovery import ServiceDiscovery
 from .Task import TaskDefinition
 from .Task import HelperTask
 
+
+def flatten_tags(l):
+    r = {}
+    for e in l:
+        if not e.get('key') or not e.get('value'):
+            raise RuntimeError('Missing key or value for tag!')
+        r[e['key']] = e['value']
+    return r
+
+
 class Service(object):
     """
     An object representing an ECS service.
@@ -87,6 +97,7 @@ class Service(object):
         self.__placement_constraints = []
         self.__placement_strategy = []
         self.__schedulingStrategy = "REPLICA"
+        self.__cw_log_groups = []
 
     def __get_service(self):
         """
@@ -590,6 +601,11 @@ class Service(object):
         if 'config' in yml:
             parameters = yml['config']
         self.parameter_store = ParameterStore(self._serviceName, self._clusterName, yml=parameters)
+        if 'cw_log_groups' in yml:
+            self.__cw_log_groups = yml['cw_log_groups']
+            for g in self.__cw_log_groups:
+                if not g.get('name'):
+                    raise RuntimeError('Missing log group name!')
 
     def from_aws(self):
         """
@@ -636,6 +652,21 @@ class Service(object):
         self.desired_task_definition.update_task_labels(family_revisions)
         self.desired_task_definition.create()
 
+    def __create_cw_log_groups(self):
+        cw = get_boto3_session().client('logs')
+        for g in self.__cw_log_groups:
+            tags = flatten_tags(g.get('tags', {}))
+            try:
+                cw.create_log_group(logGroupName=g['name'], tags=tags)
+            except cw.exceptions.ResourceAlreadyExistsException:
+                print('Log group {name} already exists, skipping.'.format(name=g['name']))
+
+    def __delete_cw_log_groups(self):
+        cw = get_boto3_session().client('logs')
+        for g in self.__cw_log_groups:
+            if g.get('delete_with_service'):
+                cw.delete_log_group(logGroupName=g['name'])
+
     def create(self):
         """
         Create the service in AWS.  If necessary, setup Application Scaling afterwards.
@@ -646,6 +677,7 @@ class Service(object):
             else:
                 print("Service Discovery already exists with this name")
         self.__create_tasks_and_task_definition()
+        self.__create_cw_log_groups()
         kwargs = self.__render(self.desired_task_definition.arn)
         self.ecs.create_service(**kwargs)
         if self.scaling:
@@ -674,6 +706,7 @@ class Service(object):
         Update the taskDefinition and deploymentConfiguration on the service.
         """
         self.__create_tasks_and_task_definition()
+        self.__create_cw_log_groups()
         self.ecs.update_service(
             cluster=self.clusterName,
             service=self.serviceName,
@@ -734,6 +767,7 @@ class Service(object):
                 cluster=self.clusterName,
                 service=self.serviceName,
             )
+        self.__delete_cw_log_groups()
 
     def _show_current_status(self):
         response = self.__get_service()
