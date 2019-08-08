@@ -77,6 +77,7 @@ class Service(object):
         self._launchType = 'EC2'
         self.__service_discovery = []
         self.__defaults()
+        self.service_tags = []
         self.from_yaml(yml)
         self.from_aws()
 
@@ -511,6 +512,7 @@ class Service(object):
             r['placementStrategy'] = self.placementStrategy
         if self.schedulingStrategy:
             r['schedulingStrategy'] = self.schedulingStrategy
+        r['tags'] = self.service_tags
         return r
 
     def from_yaml(self, yml):
@@ -590,6 +592,8 @@ class Service(object):
         if 'config' in yml:
             parameters = yml['config']
         self.parameter_store = ParameterStore(self._serviceName, self._clusterName, yml=parameters)
+        if 'tags' in yml:
+            self.service_tags = yml['tags']
 
     def from_aws(self):
         """

@@ -561,6 +561,7 @@ class TaskDefinition(VolumeMixin):
         self._memory = None
         self._executionRoleArn = None
         self._volumes = []
+        self.tags = []
 
     def from_aws(self, task_definition_id):
         self.__aws_task_definition = self.__get_task_definition(task_definition_id)
@@ -782,6 +783,7 @@ class TaskDefinition(VolumeMixin):
         volumes = self.__get_volumes()
         if volumes:
             r['volumes'] = volumes
+        r['tags'] = self.tags
         return r
 
     def render(self):
@@ -819,6 +821,8 @@ class TaskDefinition(VolumeMixin):
         if 'launch_type' in yml and yml['launch_type'] == 'FARGATE':
             self.executionRoleArn = yml['execution_role']
             self.requiresCompatibilities = ['FARGATE']
+        if 'task_def_tags' in yml:
+            self.tags = yml['task_def_tags']
 
     def get_latest_revision(self):
         try:
