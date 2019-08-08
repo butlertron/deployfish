@@ -594,6 +594,9 @@ class Service(object):
         self.parameter_store = ParameterStore(self._serviceName, self._clusterName, yml=parameters)
         if 'tags' in yml:
             self.service_tags = yml['tags']
+            for t in self.service_tags:
+                if not t.get('key') or not t.get('value'):
+                    raise RuntimeError('Missing key or value for service tag!')
 
     def from_aws(self):
         """

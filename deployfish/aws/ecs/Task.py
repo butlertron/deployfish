@@ -823,6 +823,9 @@ class TaskDefinition(VolumeMixin):
             self.requiresCompatibilities = ['FARGATE']
         if 'task_def_tags' in yml:
             self.tags = yml['task_def_tags']
+            for t in self.tags:
+                if not t.get('key') or not t.get('value'):
+                    raise RuntimeError('Missing key or value for task definition tag!')
 
     def get_latest_revision(self):
         try:
