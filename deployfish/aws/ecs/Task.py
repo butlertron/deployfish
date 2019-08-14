@@ -1,27 +1,21 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-from datetime import datetime
 import json
+import base64
 from copy import copy
 import os
 import os.path
-import random
 import re
 import shlex
-import string
-import subprocess
-from tempfile import NamedTemporaryFile
 import time
-import tzlocal
 
+import click
 import botocore
+import docker
 
 from deployfish.aws import get_boto3_session
-from deployfish.aws.asg import ASG
-from deployfish.aws.appscaling import ApplicationAutoscaling
 from deployfish.aws.systems_manager import ParameterStore
-from deployfish.aws.service_discovery import ServiceDiscovery
 
 from .TaskScheduler import TaskScheduler
 
@@ -427,6 +421,45 @@ class ContainerDefinition(VolumeMixin):
                 labels[value.split(':')[0]] = value
         return labels
 
+    def parse_local_image(self, config):
+        """
+        Setup the definitions to be able to tag and push and image from local host to ECR
+        :param config: section which defines local image
+        :return: image name to be used in the container definition
+        """
+        self.registry_name = config['ecr_repo']
+        self.local_image = config['source_image']
+        self.destination_image = config['destination_image']
+
+    def push_local_image(self):
+        """
+        Tags and pushes the image to ECR
+        :return: None
+        """
+        auth_data = self.ecr.get_authorization_token()
+        registry_url = auth_data['authorizationData'][0]['proxyEndpoint']
+
+        (username, password) = base64.b64decode(
+            bytes(auth_data['authorizationData'][0]['authorizationToken'], 'ascii')).decode('ascii').split(':')
+
+        docker_client = docker.client.from_env()
+        docker_client.login(
+            username=username,
+            password=password,
+            registry=registry_url
+        )
+
+        source_image = docker_client.images.get(self.local_image)
+        repo_url = f"{registry_url.replace('https://', '')}/{self.registry_name}"
+
+        click.secho(f"Tagging image as {repo_url}:{self.destination_image}", fg="cyan")
+        source_image.tag(f"{repo_url}:{self.destination_image}")
+
+        click.secho(f"Pushing to {repo_url}", fg="cyan")
+        docker_client.images.push(repo_url, tag=self.destination_image)
+
+        self.image = f"{repo_url}:{self.destination_image}"
+
     def render(self):
         return(self.__render())
 
@@ -439,7 +472,12 @@ class ContainerDefinition(VolumeMixin):
         :type yml: dict
         """
         self.name = yml['name']
-        self.image = yml['image']
+
+        if 'image' in yml:
+            self.image = yml['image']
+        elif 'image_local' in yml:
+            self.parse_local_image(yml['image_local'])
+
         if 'cpu' in yml:
             self.cpu = yml['cpu']
         else:
@@ -794,6 +832,8 @@ class TaskDefinition(VolumeMixin):
         return self.containers[0].get_helper_tasks()
 
     def create(self):
+        for c in self.containers:
+            c.push_local_image()
         kwargs = self.__render()
         response = self.ecs.register_task_definition(**kwargs)
         self.__defaults()
@@ -1085,6 +1125,7 @@ class Task(object):
             return
         self.register_task_definition()
         self.scheduler.schedule()
+        click.secho(f"Scheduled task {self.taskName}", fg="cyan")
 
     def unschedule(self):
         """
