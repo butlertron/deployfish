@@ -124,6 +124,7 @@ class ContainerDefinition(VolumeMixin):
         self._tmpfs = []
         self._environment = {}
         self._portMappings = []
+        self._secrets = []
         self.logConfiguration = None
 
         if 'logConfiguration' in aws:
@@ -136,32 +137,32 @@ class ContainerDefinition(VolumeMixin):
         try:
             return self.__getattribute__(attr)
         except AttributeError:
-            if attr in ['cpu', 'dockerLabels', 'essential', 'image', 'links', 'memory', 'memoryReservation', 'name']:
-                if (not getattr(self, '_' + attr) and self.__aws_container_definition and attr in self.__aws_container_definition):
+            if attr in ['cpu', 'dockerLabels', 'essential', 'image', 'links', 'memory', 'memoryReservation', 'name', 'secrets']:
+                if not getattr(self, '_' + attr) and self.__aws_container_definition and attr in self.__aws_container_definition:
                     setattr(self, "_" + attr, self.__aws_container_definition[attr])
                 return getattr(self, '_' + attr)
             elif attr == 'environment':
-                if (not self._environment and self.__aws_container_definition and 'environment' in self.__aws_container_definition):
+                if not self._environment and self.__aws_container_definition and 'environment' in self.__aws_container_definition:
                     environment = self.__aws_container_definition['environment']
                     for var in environment:
                         self._environment[var['name']] = var['value']
                 return self._environment
             elif attr == 'portMappings':
-                if (not self._portMappings and self.__aws_container_definition and 'portMappings' in self.__aws_container_definition):
+                if not self._portMappings and self.__aws_container_definition and 'portMappings' in self.__aws_container_definition:
                     ports = self.__aws_container_definition['portMappings']
                     for mapping in ports:
                         self._portMappings.append('{}:{}/{}'.format(mapping['hostPort'], mapping['containerPort'], mapping['protocol']))
                 return self._portMappings
             elif attr == 'command':
-                if (not self._command and self.__aws_container_definition and 'command' in self.__aws_container_definition):
+                if not self._command and self.__aws_container_definition and 'command' in self.__aws_container_definition:
                     self._command = ' '.join(self.__aws_container_definition['command'])
                 return self._command
             elif attr == 'entryPoint':
-                if (not self._entryPoint and self.__aws_container_definition and 'entryPoint' in self.__aws_container_definition):
+                if not self._entryPoint and self.__aws_container_definition and 'entryPoint' in self.__aws_container_definition:
                     self._entryPoint = ' '.join(self.__aws_container_definition['entryPoint'])
                 return self._entryPoint
             elif attr == 'ulimits':
-                if (not self._ulimits and self.__aws_container_definition and 'ulimits' in self.__aws_container_definition):
+                if not self._ulimits and self.__aws_container_definition and 'ulimits' in self.__aws_container_definition:
                     for ulimit in self.__aws_container_definition['ulimits']:
                         self._ulimits.append({
                             'name': ulimit['name'],
@@ -170,21 +171,21 @@ class ContainerDefinition(VolumeMixin):
                         })
                 return self._ulimits
             elif attr == 'cap_add':
-                if (not self._cap_add and self.__aws_container_definition):
+                if not self._cap_add and self.__aws_container_definition:
                     try:
                         self._cap_add = self.__aws_container_definition['linuxParameters']['capabilites']['add']
                     except KeyError:
                         pass
                 return self._cap_add
             elif attr == 'cap_drop':
-                if (not self._cap_drop and self.__aws_container_definition):
+                if not self._cap_drop and self.__aws_container_definition:
                     try:
                         self._cap_drop = self.__aws_container_definition['linuxParameters']['capabilites']['drop']
                     except KeyError:
                         pass
                 return self._cap_drop
             elif attr == 'tmpfs':
-                if (not self._tmpfs and self.__aws_container_definition):
+                if not self._tmpfs and self.__aws_container_definition:
                     try:
                         self._tmpfs = self.__aws_container_definition['linuxParameters']['tmpfs']
                     except KeyError:
@@ -210,6 +211,7 @@ class ContainerDefinition(VolumeMixin):
             'cap_add',
             'cap_drop',
             'tmpfs',
+            'secrets'
         ]:
             setattr(self, "_" + attr, value)
         else:
@@ -354,6 +356,8 @@ class ContainerDefinition(VolumeMixin):
                 r['extraHosts'].append({'hostname': hostname, 'ipAddress': ipAddress})
         if self.logConfiguration:
             r['logConfiguration'] = self.logConfiguration.render()
+        if self.secrets:
+            r['secrets'] = [{'name': x['name'], 'valueFrom': x['value_from']} for x in self.secrets]
         if self.cap_add or self.cap_drop or self.tmpfs:
             r['linuxParameters'] = {}
             if self.cap_add or self.cap_drop:
@@ -533,6 +537,8 @@ class ContainerDefinition(VolumeMixin):
             self.cap_add = yml['cap_add']
         if 'cap_drop' in yml:
             self.cap_drop = yml['cap_drop']
+        if 'secrets' in yml:
+            self.secrets = yml['secrets']
         if 'tmpfs' in yml:
             for tc in yml['tmpfs']:
                 tc_append = {}
