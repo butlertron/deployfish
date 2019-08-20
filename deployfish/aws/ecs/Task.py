@@ -1,27 +1,21 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-from datetime import datetime
 import json
+import base64
 from copy import copy
 import os
 import os.path
-import random
 import re
 import shlex
-import string
-import subprocess
-from tempfile import NamedTemporaryFile
 import time
-import tzlocal
 
+import click
 import botocore
+import docker
 
 from deployfish.aws import get_boto3_session
-from deployfish.aws.asg import ASG
-from deployfish.aws.appscaling import ApplicationAutoscaling
 from deployfish.aws.systems_manager import ParameterStore
-from deployfish.aws.service_discovery import ServiceDiscovery
 
 from .TaskScheduler import TaskScheduler
 
@@ -130,6 +124,7 @@ class ContainerDefinition(VolumeMixin):
         self._tmpfs = []
         self._environment = {}
         self._portMappings = []
+        self._secrets = []
         self.logConfiguration = None
 
         if 'logConfiguration' in aws:
@@ -142,32 +137,32 @@ class ContainerDefinition(VolumeMixin):
         try:
             return self.__getattribute__(attr)
         except AttributeError:
-            if attr in ['cpu', 'dockerLabels', 'essential', 'image', 'links', 'memory', 'memoryReservation', 'name']:
-                if (not getattr(self, '_' + attr) and self.__aws_container_definition and attr in self.__aws_container_definition):
+            if attr in ['cpu', 'dockerLabels', 'essential', 'image', 'links', 'memory', 'memoryReservation', 'name', 'secrets']:
+                if not getattr(self, '_' + attr) and self.__aws_container_definition and attr in self.__aws_container_definition:
                     setattr(self, "_" + attr, self.__aws_container_definition[attr])
                 return getattr(self, '_' + attr)
             elif attr == 'environment':
-                if (not self._environment and self.__aws_container_definition and 'environment' in self.__aws_container_definition):
+                if not self._environment and self.__aws_container_definition and 'environment' in self.__aws_container_definition:
                     environment = self.__aws_container_definition['environment']
                     for var in environment:
                         self._environment[var['name']] = var['value']
                 return self._environment
             elif attr == 'portMappings':
-                if (not self._portMappings and self.__aws_container_definition and 'portMappings' in self.__aws_container_definition):
+                if not self._portMappings and self.__aws_container_definition and 'portMappings' in self.__aws_container_definition:
                     ports = self.__aws_container_definition['portMappings']
                     for mapping in ports:
                         self._portMappings.append('{}:{}/{}'.format(mapping['hostPort'], mapping['containerPort'], mapping['protocol']))
                 return self._portMappings
             elif attr == 'command':
-                if (not self._command and self.__aws_container_definition and 'command' in self.__aws_container_definition):
+                if not self._command and self.__aws_container_definition and 'command' in self.__aws_container_definition:
                     self._command = ' '.join(self.__aws_container_definition['command'])
                 return self._command
             elif attr == 'entryPoint':
-                if (not self._entryPoint and self.__aws_container_definition and 'entryPoint' in self.__aws_container_definition):
+                if not self._entryPoint and self.__aws_container_definition and 'entryPoint' in self.__aws_container_definition:
                     self._entryPoint = ' '.join(self.__aws_container_definition['entryPoint'])
                 return self._entryPoint
             elif attr == 'ulimits':
-                if (not self._ulimits and self.__aws_container_definition and 'ulimits' in self.__aws_container_definition):
+                if not self._ulimits and self.__aws_container_definition and 'ulimits' in self.__aws_container_definition:
                     for ulimit in self.__aws_container_definition['ulimits']:
                         self._ulimits.append({
                             'name': ulimit['name'],
@@ -176,21 +171,21 @@ class ContainerDefinition(VolumeMixin):
                         })
                 return self._ulimits
             elif attr == 'cap_add':
-                if (not self._cap_add and self.__aws_container_definition):
+                if not self._cap_add and self.__aws_container_definition:
                     try:
                         self._cap_add = self.__aws_container_definition['linuxParameters']['capabilites']['add']
                     except KeyError:
                         pass
                 return self._cap_add
             elif attr == 'cap_drop':
-                if (not self._cap_drop and self.__aws_container_definition):
+                if not self._cap_drop and self.__aws_container_definition:
                     try:
                         self._cap_drop = self.__aws_container_definition['linuxParameters']['capabilites']['drop']
                     except KeyError:
                         pass
                 return self._cap_drop
             elif attr == 'tmpfs':
-                if (not self._tmpfs and self.__aws_container_definition):
+                if not self._tmpfs and self.__aws_container_definition:
                     try:
                         self._tmpfs = self.__aws_container_definition['linuxParameters']['tmpfs']
                     except KeyError:
@@ -216,6 +211,7 @@ class ContainerDefinition(VolumeMixin):
             'cap_add',
             'cap_drop',
             'tmpfs',
+            'secrets'
         ]:
             setattr(self, "_" + attr, value)
         else:
@@ -360,6 +356,8 @@ class ContainerDefinition(VolumeMixin):
                 r['extraHosts'].append({'hostname': hostname, 'ipAddress': ipAddress})
         if self.logConfiguration:
             r['logConfiguration'] = self.logConfiguration.render()
+        if self.secrets:
+            r['secrets'] = [{'name': x['name'], 'valueFrom': x['value_from']} for x in self.secrets]
         if self.cap_add or self.cap_drop or self.tmpfs:
             r['linuxParameters'] = {}
             if self.cap_add or self.cap_drop:
@@ -427,6 +425,45 @@ class ContainerDefinition(VolumeMixin):
                 labels[value.split(':')[0]] = value
         return labels
 
+    def parse_local_image(self, config):
+        """
+        Setup the definitions to be able to tag and push and image from local host to ECR
+        :param config: section which defines local image
+        :return: image name to be used in the container definition
+        """
+        self.registry_name = config['ecr_repo']
+        self.local_image = config['source_image']
+        self.destination_image = config['destination_image']
+
+    def push_local_image(self):
+        """
+        Tags and pushes the image to ECR
+        :return: None
+        """
+        auth_data = self.ecr.get_authorization_token()
+        registry_url = auth_data['authorizationData'][0]['proxyEndpoint']
+
+        (username, password) = base64.b64decode(
+            bytes(auth_data['authorizationData'][0]['authorizationToken'], 'ascii')).decode('ascii').split(':')
+
+        docker_client = docker.client.from_env()
+        docker_client.login(
+            username=username,
+            password=password,
+            registry=registry_url
+        )
+
+        source_image = docker_client.images.get(self.local_image)
+        repo_url = f"{registry_url.replace('https://', '')}/{self.registry_name}"
+
+        click.secho(f"Tagging image as {repo_url}:{self.destination_image}", fg="cyan")
+        source_image.tag(f"{repo_url}:{self.destination_image}")
+
+        click.secho(f"Pushing to {repo_url}", fg="cyan")
+        docker_client.images.push(repo_url, tag=self.destination_image)
+
+        self.image = f"{repo_url}:{self.destination_image}"
+
     def render(self):
         return(self.__render())
 
@@ -439,7 +476,12 @@ class ContainerDefinition(VolumeMixin):
         :type yml: dict
         """
         self.name = yml['name']
-        self.image = yml['image']
+
+        if 'image' in yml:
+            self.image = yml['image']
+        elif 'image_local' in yml:
+            self.parse_local_image(yml['image_local'])
+
         if 'cpu' in yml:
             self.cpu = yml['cpu']
         else:
@@ -495,6 +537,8 @@ class ContainerDefinition(VolumeMixin):
             self.cap_add = yml['cap_add']
         if 'cap_drop' in yml:
             self.cap_drop = yml['cap_drop']
+        if 'secrets' in yml:
+            self.secrets = yml['secrets']
         if 'tmpfs' in yml:
             for tc in yml['tmpfs']:
                 tc_append = {}
@@ -796,6 +840,8 @@ class TaskDefinition(VolumeMixin):
         return self.containers[0].get_helper_tasks()
 
     def create(self):
+        for c in self.containers:
+            c.push_local_image()
         kwargs = self.__render()
         response = self.ecs.register_task_definition(**kwargs)
         self.__defaults()
@@ -1092,6 +1138,7 @@ class Task(object):
             return
         self.register_task_definition()
         self.scheduler.schedule()
+        click.secho(f"Scheduled task {self.taskName}", fg="cyan")
 
     def unschedule(self):
         """

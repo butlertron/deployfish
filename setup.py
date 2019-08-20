@@ -26,9 +26,11 @@ setup(name="deployfish",
           "boto3 >= 1.7.55",
           "botocore >= 1.10.55",
           "click >= 6.7",
+          "docker >= 4.0.2",
           "PyYAML == 3.12",
           "tzlocal >= 1.4",
-          "requests >= 2.18.4"
+          "requests >= 2.18.4",
+          "docker >= 4.0.2"
       ],
       entry_points={'console_scripts': [
           'deploy = deployfish.dplycli:main',

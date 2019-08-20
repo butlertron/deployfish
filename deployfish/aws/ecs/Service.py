@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import base64
 from datetime import datetime
 import json
 from copy import copy
@@ -15,6 +16,7 @@ import time
 import tzlocal
 
 import botocore
+import docker
 
 from deployfish.aws import get_boto3_session
 from deployfish.aws.asg import ASG
@@ -24,6 +26,21 @@ from deployfish.aws.service_discovery import ServiceDiscovery
 
 from .Task import TaskDefinition
 from .Task import HelperTask
+
+
+def _capitalize_keys_in_list(orig_list):
+    l = []
+    for d in orig_list:
+        l.append(dict((k.capitalize(), v) for k, v in d.items()))
+    return l
+
+def flatten_tags(l):
+    r = {}
+    for e in l:
+        if not e.get('key') or not e.get('value'):
+            raise RuntimeError('Missing key or value for tag!')
+        r[e['key']] = e['value']
+    return r
 
 class Service(object):
     """
@@ -56,7 +73,7 @@ class Service(object):
             service
         )
 
-    def __init__(self, service_name, config=None):
+    def __init__(self, service_name, config=None, push_image=None, push_tag=None):
         yml = config.get_service(service_name)
         self.ecs = get_boto3_session().client('ecs')
 
@@ -74,12 +91,18 @@ class Service(object):
         self._desired_count = 0
         self._minimumHealthyPercent = None
         self._maximumPercent = None
+        self._push_image = push_image
+        self._push_tag = push_tag
         self._launchType = 'EC2'
         self.__service_discovery = []
+        self._ecr_repo = None
         self.__defaults()
         self.service_tags = []
         self.from_yaml(yml)
         self.from_aws()
+
+        if self._push_image and (not self._ecr_repo or not self._push_tag):
+            raise RuntimeError('Image specified to be pushed but no ECR repo configured or no tag specified')
 
     def __defaults(self):
         self._roleArn = None
@@ -88,6 +111,7 @@ class Service(object):
         self.__placement_constraints = []
         self.__placement_strategy = []
         self.__schedulingStrategy = "REPLICA"
+        self.__cw_log_groups = []
 
     def __get_service(self):
         """
@@ -597,6 +621,16 @@ class Service(object):
             for t in self.service_tags:
                 if not t.get('key') or not t.get('value'):
                     raise RuntimeError('Missing key or value for service tag!')
+        if 'cw_log_groups' in yml:
+            self.__cw_log_groups = yml['cw_log_groups']
+            for g in self.__cw_log_groups:
+                if not g.get('name'):
+                    raise RuntimeError('Missing log group name!')
+
+        if 'ecr-repository' in yml:
+            self._ecr_repo = yml['ecr-repository']
+            if not self._ecr_repo.get('name'):
+                raise RuntimeError('Missing name for ECR repository!')
 
     def from_aws(self):
         """
@@ -643,16 +677,65 @@ class Service(object):
         self.desired_task_definition.update_task_labels(family_revisions)
         self.desired_task_definition.create()
 
+    def push_ecr_image(self):
+        docker_client = docker.from_env()
+        ecr = get_boto3_session().client('ecr')
+        token = ecr.get_authorization_token()
+        username, password = base64.b64decode(
+            token['authorizationData'][0]['authorizationToken']
+        ).decode().split(':')
+        registry = token['authorizationData'][0]['proxyEndpoint']
+        docker_client.login(username, password, registry=registry)
+        print('Pushing Docker image..')
+        docker_client.api.push(repository=self._push_image, tag=self._push_tag)
+        print('Image pushed!')
+
+    def __create_ecr_repo_and_push(self):
+        if self._ecr_repo:
+            ecr = get_boto3_session().client('ecr')
+            repo_name = self._ecr_repo['name']
+            tags = self._ecr_repo.get('tags', [])
+            for t in tags:
+                if not t.get('key') or not t.get('value'):
+                    raise RuntimeError('Missing key or value for ECR repository tag!')
+            try:
+                ecr.create_repository(repositoryName=repo_name, tags=_capitalize_keys_in_list(tags))
+            except ecr.exceptions.RepositoryAlreadyExistsException:
+                print('ECR repository {repo_name} already exists, skipping.'.format(
+                    repo_name=repo_name
+                ))
+
+            if self._push_image and self._push_tag:
+                self.push_ecr_image()
+
+    def __create_cw_log_groups(self):
+        cw = get_boto3_session().client('logs')
+        for g in self.__cw_log_groups:
+            tags = flatten_tags(g.get('tags', {}))
+            try:
+                cw.create_log_group(logGroupName=g['name'], tags=tags)
+            except cw.exceptions.ResourceAlreadyExistsException:
+                print('Log group {name} already exists, skipping.'.format(name=g['name']))
+
+    def __delete_cw_log_groups(self):
+        cw = get_boto3_session().client('logs')
+        for g in self.__cw_log_groups:
+            if g.get('delete_with_service'):
+                cw.delete_log_group(logGroupName=g['name'])
+
     def create(self):
         """
         Create the service in AWS.  If necessary, setup Application Scaling afterwards.
         """
+        self.__create_ecr_repo_and_push()
+
         if self.serviceDiscovery is not None:
             if not self.serviceDiscovery.exists():
                 self.service_discovery = self.serviceDiscovery.create()
             else:
                 print("Service Discovery already exists with this name")
         self.__create_tasks_and_task_definition()
+        self.__create_cw_log_groups()
         kwargs = self.__render(self.desired_task_definition.arn)
         self.ecs.create_service(**kwargs)
         if self.scaling:
@@ -680,7 +763,9 @@ class Service(object):
         """
         Update the taskDefinition and deploymentConfiguration on the service.
         """
+        self.__create_ecr_repo_and_push()
         self.__create_tasks_and_task_definition()
+        self.__create_cw_log_groups()
         self.ecs.update_service(
             cluster=self.clusterName,
             service=self.serviceName,
@@ -741,6 +826,21 @@ class Service(object):
                 cluster=self.clusterName,
                 service=self.serviceName,
             )
+        if self._ecr_repo:
+            ecr = get_boto3_session().client('ecr')
+            repo_name = self._ecr_repo['name']
+            to_delete = self._ecr_repo.get('delete_with_service')
+            try:
+                if to_delete:
+                    print('Deleting ECR repository: {repo_name}'.format(repo_name=repo_name))
+                    ecr.delete_repository(repositoryName=repo_name, force=True)
+                else:
+                    print('ECR repository {repo_name} marked as skippable, leaving as-is'.format(repo_name=repo_name))
+            except ecr.exceptions.RepositoryNotFoundException:
+                print('ECR repository {repo_name} does not exist, skipping.'.format(
+                    repo_name=repo_name
+                ))
+        self.__delete_cw_log_groups()
 
     def _show_current_status(self):
         response = self.__get_service()
