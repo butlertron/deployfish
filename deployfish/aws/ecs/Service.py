@@ -34,6 +34,7 @@ def _capitalize_keys_in_list(orig_list):
         l.append(dict((k.capitalize(), v) for k, v in d.items()))
     return l
 
+
 def flatten_tags(l):
     r = {}
     for e in l:
@@ -41,6 +42,21 @@ def flatten_tags(l):
             raise RuntimeError('Missing key or value for tag!')
         r[e['key']] = e['value']
     return r
+
+
+def get_tags(yml):
+    tags = yml.get('tags', [])
+
+    for t in tags:
+        if not t.get('key') or not t.get('value'):
+            raise RuntimeError(
+                'Missing key or value for tag! key:{k} value:{v}'.format(
+                    k=t.get('key'), v=t.get('value')
+                )
+            )
+
+    return tags
+
 
 class Service(object):
     """
@@ -97,6 +113,7 @@ class Service(object):
         self.__service_discovery = []
         self._ecr_repo = None
         self.__defaults()
+        self.service_tags = []
         self.from_yaml(yml)
         self.from_aws()
 
@@ -535,6 +552,7 @@ class Service(object):
             r['placementStrategy'] = self.placementStrategy
         if self.schedulingStrategy:
             r['schedulingStrategy'] = self.schedulingStrategy
+        r['tags'] = self.service_tags
         return r
 
     def from_yaml(self, yml):
@@ -614,6 +632,7 @@ class Service(object):
         if 'config' in yml:
             parameters = yml['config']
         self.parameter_store = ParameterStore(self._serviceName, self._clusterName, yml=parameters)
+        self.service_tags = get_tags(yml)
         if 'cw_log_groups' in yml:
             self.__cw_log_groups = yml['cw_log_groups']
             for g in self.__cw_log_groups:
@@ -687,10 +706,7 @@ class Service(object):
         if self._ecr_repo:
             ecr = get_boto3_session().client('ecr')
             repo_name = self._ecr_repo['name']
-            tags = self._ecr_repo.get('tags', [])
-            for t in tags:
-                if not t.get('key') or not t.get('value'):
-                    raise RuntimeError('Missing key or value for ECR repository tag!')
+            tags = get_tags(self._ecr_repo)
             try:
                 ecr.create_repository(repositoryName=repo_name, tags=_capitalize_keys_in_list(tags))
             except ecr.exceptions.RepositoryAlreadyExistsException:
