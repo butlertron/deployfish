@@ -126,6 +126,7 @@ class ContainerDefinition(VolumeMixin):
         self._portMappings = []
         self._secrets = []
         self.logConfiguration = None
+        self.local_image = None
 
         if 'logConfiguration' in aws:
             self.logConfiguration = LogConfiguration(aws['logConfiguration'])
@@ -440,6 +441,10 @@ class ContainerDefinition(VolumeMixin):
         Tags and pushes the image to ECR
         :return: None
         """
+        if not self.local_image:
+            print('No local image to push')
+            return
+
         auth_data = self.ecr.get_authorization_token()
         registry_url = auth_data['authorizationData'][0]['proxyEndpoint']
 
