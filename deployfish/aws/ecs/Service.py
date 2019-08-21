@@ -714,6 +714,17 @@ class Service(object):
                     repo_name=repo_name
                 ))
 
+            if self._ecr_repo.get('create_cache'):
+                try:
+                    ecr.create_repository(
+                        repositoryName='cache_{repo_name}'.format(repo_name=repo_name),
+                        tags=_capitalize_keys_in_list(tags)
+                    )
+                except ecr.exceptions.RepositoryAlreadyExistsException:
+                    print('ECR cache repository cache_{repo_name} already exists, skipping.'.format(
+                        repo_name=repo_name
+                    ))
+
             if self._push_image and self._push_tag:
                 self.push_ecr_image()
 
@@ -843,6 +854,8 @@ class Service(object):
                 if to_delete:
                     print('Deleting ECR repository: {repo_name}'.format(repo_name=repo_name))
                     ecr.delete_repository(repositoryName=repo_name, force=True)
+                    if self._ecr_repo.get('create_cache'):
+                        ecr.delete_repository(repositoryName='cache_{repo_name}'.format(repo_name=repo_name), force=True)
                 else:
                     print('ECR repository {repo_name} marked as skippable, leaving as-is'.format(repo_name=repo_name))
             except ecr.exceptions.RepositoryNotFoundException:
