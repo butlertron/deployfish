@@ -465,7 +465,9 @@ class ContainerDefinition(VolumeMixin):
         source_image.tag(f"{repo_url}:{self.destination_image}")
 
         click.secho(f"Pushing to {repo_url}", fg="cyan")
-        docker_client.images.push(repo_url, tag=self.destination_image)
+        response = docker_client.images.push(repo_url, tag=self.destination_image)
+        if 'error' in response:
+            click.secho(response)
 
         self.image = f"{repo_url}:{self.destination_image}"
 
@@ -832,7 +834,8 @@ class TaskDefinition(VolumeMixin):
         volumes = self.__get_volumes()
         if volumes:
             r['volumes'] = volumes
-        r['tags'] = self.tags
+        if self.tags:
+            r['tags'] = self.tags
         return r
 
     def render(self):
@@ -932,7 +935,7 @@ class Task(object):
             'subnets': yml['subnets'],
         }
         if 'security_groups' in yml:
-            self.vpc_configuration['security_groups'] = yml['security_groups']
+            self.vpc_configuration['securityGroups'] = yml['security_groups']
 
         if 'public_ip' in yml:
             self.vpc_configuration['assignPublicIp'] = yml['public_ip']
