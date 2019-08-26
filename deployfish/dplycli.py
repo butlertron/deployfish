@@ -159,34 +159,8 @@ def manage_asg_count(service, count, asg, force_asg):
             service.asg.scale(count, force=force_asg)
 
 
-@cli.command('create', short_help="Create a service in AWS")
-@click.pass_context
-@click.argument('service_name')
-@click.option('--update-configs/--no-update-configs', default=False, help="Update our config parameters in AWS")
-@click.option('--dry-run/--no-dry-run', default=False, help="Don't actually create the service")
-@click.option(
-    '--wait/--no-wait',
-    default=True,
-    help="Don't exit until the service is created and all its tasks are running"
-)
-@click.option('--asg/--no-asg', default=True, help="Scale your ASG to fit our service count")
-@click.option(
-    '--force-asg/--no-force-asg',
-    default=False,
-    help="Force your ASG to scale outside of its MinCount or MaxCount"
-)
-@click.option(
-    '--push-image',
-    default=None,
-    help="Push specified image to the ECR repo(s). The repository(ies) must be described in the YML file. Also requires --push-tag option."
-)
-@click.option(
-    '--push-tag',
-    default=None,
-    help="Tag to use for pushed image. Required when using --push-image."
-)
-@needs_config
-def create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg, push_image, push_tag):
+# used to bypass command line setup
+def _create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg, push_image, push_tag):
     """
     Create a new ECS service named SERVICE_NAME.
     """
@@ -231,6 +205,36 @@ def create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg, pus
             else:
                 click.secho("  FAILURE: the service failed to start.", fg='red')
                 sys.exit(1)
+
+@cli.command('create', short_help="Create a service in AWS")
+@click.pass_context
+@click.argument('service_name')
+@click.option('--update-configs/--no-update-configs', default=False, help="Update our config parameters in AWS")
+@click.option('--dry-run/--no-dry-run', default=False, help="Don't actually create the service")
+@click.option(
+    '--wait/--no-wait',
+    default=True,
+    help="Don't exit until the service is created and all its tasks are running"
+)
+@click.option('--asg/--no-asg', default=True, help="Scale your ASG to fit our service count")
+@click.option(
+    '--force-asg/--no-force-asg',
+    default=False,
+    help="Force your ASG to scale outside of its MinCount or MaxCount"
+)
+@click.option(
+    '--push-image',
+    default=None,
+    help="Push specified image to the ECR repo(s). The repository(ies) must be described in the YML file. Also requires --push-tag option."
+)
+@click.option(
+    '--push-tag',
+    default=None,
+    help="Tag to use for pushed image. Required when using --push-image."
+)
+@needs_config
+def create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg, push_image, push_tag):
+    return _create(ctx, service_name, update_configs, dry_run, wait, asg, force_asg, push_image, push_tag)
 
 
 @cli.command('info', short_help="Print current AWS info about a service")
@@ -287,8 +291,9 @@ def version(ctx, service_name):
     default=None,
     help="Tag to use for pushed image. Required when using --push-image."
 )
+@click.option('--create_if_missing/--no-create_if_missing', default=False, help="Create the service if it doesn't exist")
 @needs_config
-def update(ctx, service_name, dry_run, wait, push_image, push_tag):
+def update(ctx, service_name, dry_run, wait, push_image, push_tag, create_if_missing):
     """
     Update the our ECS service from what is in deployfish.yml.  This means two things:
 
@@ -308,6 +313,20 @@ def update(ctx, service_name, dry_run, wait, push_image, push_tag):
     service = Service(service_name, config=ctx.obj['CONFIG'], push_image=push_image, push_tag=push_tag)
     print()
     click.secho('Updating "{}" service:'.format(service.serviceName), fg="white")
+    if not service.active_task_definition and create_if_missing:
+        click.secho('Service "{}" does not exist, creating...:'.format(service.serviceName), fg="white")
+        return _create(
+            ctx,
+            service_name,
+            update_configs=False,
+            dry_run=dry_run,
+            wait=wait,
+            asg=True,
+            force_asg=False,
+            push_image=push_image,
+            push_tag=push_tag
+        )
+
     click.secho('  Current task definition:', fg="yellow")
     print_task_definition(service.active_task_definition)
     click.secho('\n  New task definition:', fg="green")
