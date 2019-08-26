@@ -44,6 +44,9 @@ def print_service_info(service):
         click.secho('      max_capacity      : {}'.format(service.scaling.MaxCapacity), fg="cyan")
         click.secho('      role_arn          : {}'.format(service.scaling.RoleARN), fg="cyan")
         click.secho('      resource_id       : {}'.format(service.scaling.resource_id), fg="cyan")
+    if service.serviceDiscovery:
+        click.secho('    Service Discovery:', fg="cyan")
+        click.secho('      ARN      : {}'.format(service.serviceDiscovery._registry_arn), fg="cyan")
 
 
 def print_task_definition(task_definition, indent="  "):

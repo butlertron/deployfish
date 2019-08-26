@@ -555,6 +555,22 @@ class Service(object):
         r['tags'] = self.service_tags
         return r
 
+    def _service_discovery_from_yml(self, yml):
+        service_discovery = None
+        if 'network_mode' in yml:
+            if yml['network_mode'] == 'awsvpc' and 'service_discovery' in yml:
+                service_discovery = ServiceDiscovery(None, yml=yml['service_discovery'])
+            elif 'service_discovery' in yml:
+                print("Ignoring service discovery config since network mode is not awsvpc")
+        return service_discovery
+
+    def _create_service_discovery_if_missing(self, service_discovery):
+        if service_discovery is not None:
+            if not service_discovery.exists():
+                service_discovery.create()
+            else:
+                print("Service Discovery already exists with this name")
+
     def from_yaml(self, yml):
         """
         Load our service information from the parsed yaml.  ``yml`` should be
@@ -600,11 +616,10 @@ class Service(object):
                 yml['vpc_configuration']['security_groups'],
                 yml['vpc_configuration']['public_ip'],
             )
-        if 'network_mode' in yml:
-            if yml['network_mode'] == 'awsvpc' and 'service_discovery' in yml:
-                self.serviceDiscovery = ServiceDiscovery(None, yml=yml['service_discovery'])
-            elif 'service_discovery' in yml:
-                print("Ignoring service discovery config since network mode is not awsvpc")
+        self.serviceDiscovery = self._service_discovery_from_yml(yml)
+        if self.serviceDiscovery:
+            self._create_service_discovery_if_missing(self.serviceDiscovery)
+            self.__service_discovery = [{'registryArn': self.serviceDiscovery._registry_arn}]
         if 'placement_constraints' in yml:
             self.placementConstraints = yml['placement_constraints']
         if 'placement_strategy' in yml:
@@ -670,6 +685,7 @@ class Service(object):
             if self.__aws_service['serviceRegistries']:
                 self.serviceDiscovery = ServiceDiscovery(self.service_discovery[0]['registryArn'])
             else:
+                # Note that this forces you to delete the service if you want to go from no discovery to some discovery
                 self.serviceDiscovery = None
         else:
             self.active_task_definition = None
@@ -754,9 +770,11 @@ class Service(object):
                 self.service_discovery = self.serviceDiscovery.create()
             else:
                 print("Service Discovery already exists with this name")
+
         self.__create_tasks_and_task_definition()
         self.__create_cw_log_groups()
         kwargs = self.__render(self.desired_task_definition.arn)
+
         self.ecs.create_service(**kwargs)
         if self.scaling:
             self.scaling.create()
@@ -786,6 +804,7 @@ class Service(object):
         self.__create_ecr_repo_and_push()
         self.__create_tasks_and_task_definition()
         self.__create_cw_log_groups()
+
         self.ecs.update_service(
             cluster=self.clusterName,
             service=self.serviceName,

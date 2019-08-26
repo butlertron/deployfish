@@ -130,6 +130,7 @@ class ServiceDiscovery(object):
                     return True
             else:
                 if item['Name'] == self._name:
+                    self._registry_arn = item['Arn']
                     self._service_id = item['Id']
                     return True
 
