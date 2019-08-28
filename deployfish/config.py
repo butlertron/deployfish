@@ -51,6 +51,7 @@ class Config(object):
     """
 
     TERRAFORM_RE = re.compile('\$\{terraform.(?P<key>[A-Za-z0-9_]+)\}')
+    TERRAFORM_CONCAT_RE = re.compile('\$\{concat\(terraform.(?P<key>[A-Za-z0-9_]+)\)\}')
     ENVIRONMENT_RE = re.compile('\$\{env.(?P<key>.+)\}')
 
     def __init__(self, filename='deployfish.yml', env_file=None, import_env=False, interpolate=True, tfe_token=None, use_aws_section=True, raw_config=None, boto3_session=None):
@@ -212,10 +213,17 @@ class Config(object):
 
     def __do_string(self, raw, key, value, replacers):
         if self.terraform:
+            mc = self.TERRAFORM_CONCAT_RE.search(value)
             m = self.TERRAFORM_RE.search(value)
-            if m:
-                tfvalue = self.terraform.lookup(m.group('key'), replacers)
+            if m or mc:
+                if m:
+                    matcher = m
+                else:
+                    matcher = mc
+                tfvalue = self.terraform.lookup(matcher.group('key'), replacers)
                 if isinstance(tfvalue, (list, tuple, dict)):
+                    if mc and isinstance(tfvalue, (list, tuple)):
+                        tfvalue = ','.join(tfvalue)
                     raw[key] = tfvalue
                     self.__replace(raw, key, tfvalue, replacers)
                     return
