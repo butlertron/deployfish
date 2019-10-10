@@ -923,6 +923,8 @@ class Task(object):
         self._roleArn = None
         self.schedule_expression = None
         self.schedule_role = None
+        self.scheduler_name = None
+        self.scheduler_target_name = None
         self.vpc_configuration = {}
         self.placement_constraints = []
         self.placement_strategy = []
@@ -1023,6 +1025,9 @@ class Task(object):
             self.schedule_expression = yml['schedule']
         if 'schedule_role' in yml:
             self.schedule_role = yml['schedule_role']
+        if 'scheduler_name' in yml:
+            self.scheduler_name = yml['scheduler_name']
+            self.scheduler_target_name = f'{self.scheduler_name}-target'
         if 'group' in yml:
             self.group = yml['group']
 
