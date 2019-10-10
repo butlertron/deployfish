@@ -29,8 +29,7 @@ setup(name="deployfish",
           "docker >= 4.0.2",
           "PyYAML == 3.12",
           "tzlocal >= 1.4",
-          "requests >= 2.18.4",
-          "docker >= 4.0.2"
+          "requests >= 2.18.4"
       ],
       entry_points={'console_scripts': [
           'deploy = deployfish.dplycli:main',

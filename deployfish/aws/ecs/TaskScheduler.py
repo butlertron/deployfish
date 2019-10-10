@@ -10,8 +10,15 @@ class TaskScheduler(object):
     def __init__(self, task):
         self.task = task
         self.client = get_boto3_session().client('events')
-        self.name = "{}-scheduler".format(self.task.taskName)
-        self.target_name = "{}-scheduler-target".format(self.task.taskName)
+        if self.task.scheduler_name:
+            self.name = task.scheduler_name
+        else:
+            self.name = "{}-scheduler".format(self.task.taskName)
+
+        if self.task.scheduler_target_name:
+            self.target_name = self.task.scheduler_target_name
+        else:
+            self.target_name = "{}-scheduler-target".format(self.task.taskName)
 
     def _render(self):
         """
