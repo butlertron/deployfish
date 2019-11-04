@@ -196,7 +196,17 @@ class Config(object):
             if 'workspace' in self.__raw['terraform']:
                 self.__raw['terraform']['workspace'] = self.__raw['terraform']['workspace'].format(**replacers)
             else:
-                self.__raw['terraform']['statefile'] = self.__raw['terraform']['statefile'].format(**replacers)
+                if isinstance(self.__raw['terraform'], dict):
+                    try:
+                        self.__raw['terraform']['statefile'] = self.__raw['terraform']['statefile'].format(**replacers)
+                    except KeyError:
+                        print('Skipping replacers')
+                elif isinstance(self.__raw['terraform'], list):
+                    for statefile_dict in self.__raw['terraform']:
+                        try:
+                            statefile_dict['statefile'] = statefile_dict['statefile'].format(**replacers)
+                        except KeyError:
+                            print('Skipping replacers')
 
     def __replace(self, raw, key, value, replacers):
         if isinstance(value, dict):
