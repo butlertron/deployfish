@@ -64,15 +64,20 @@ class Config(object):
         # Setup our boto3_session here because we might need it when retrieving
         # the terraform file from S3
 
-        if use_aws_section:
-            build_boto3_session(self, boto3_session_override=boto3_session)
-        else:
-            build_boto3_session(boto3_session_override=boto3_session)
         self.import_env = import_env
         self.env_file = env_file
         self.tfe_token = tfe_token
         self.environ = None
         self.terraform = None
+
+        if interpolate and 'aws' in self.__raw:
+            self.replace_aws()
+
+        if use_aws_section:
+            build_boto3_session(self, boto3_session_override=boto3_session)
+        else:
+            build_boto3_session(boto3_session_override=boto3_session)
+
         if interpolate:
             if 'terraform' in self.__raw:
                 self.replace_terraform()
@@ -185,6 +190,15 @@ class Config(object):
         #         #     self.environ = os.environ
         #
         #         self.__do_dict(service, replacers)
+
+    def replace_aws(self):
+        if not self.environ:
+            self.environ = {}
+        if self.env_file:
+            self.load_env_file(self.env_file)
+        if self.import_env:
+            self.load_environ()
+        self.__do_dict(self.__raw['aws'], {})
 
     def replace_terraform(self):
         for service in self.__raw['services']:
