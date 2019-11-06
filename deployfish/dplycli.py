@@ -38,6 +38,10 @@ def print_service_info(service):
             click.secho('      target_group_arn  : {}'.format(service.load_balancer['target_group_arn']), fg="cyan")
         click.secho('      container_name    : {}'.format(service.load_balancer['container_name']), fg="cyan")
         click.secho('      container_port    : {}'.format(service.load_balancer['container_port']), fg="cyan")
+    if service.dynamic_alb:
+        click.secho('    dynamic_alb:', fg="cyan")
+        for key, val in service.__dynamic_alb:
+            click.secho(f'      {key}  : {val}', fg="cyan")
     if service.scaling:
         click.secho('    application_scaling:', fg="cyan")
         click.secho('      min_capacity      : {}'.format(service.scaling.MinCapacity), fg="cyan")

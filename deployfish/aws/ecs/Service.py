@@ -123,6 +123,7 @@ class Service(object):
     def __defaults(self):
         self._roleArn = None
         self.__load_balancer = {}
+        self.__dynamic_alb = {}
         self.__vpc_configuration = {}
         self.__placement_constraints = []
         self.__placement_strategy = []
@@ -426,6 +427,53 @@ class Service(object):
         }
 
     @property
+    def dynamic_alb(self):
+        """
+        Returns the dynamic application load balancer config.
+
+        :return: dict
+        """
+        return self.__dynamic_alb
+
+    def set_dynamic_alb(
+        self,
+        load_balancer_arn,
+        target_group_name,
+        container_name,
+        container_port,
+        container_protocol,
+        host_rule,
+        health_check_port,
+        health_check_protocol,
+        vpc_id,
+        health_check_path,
+        health_check_http_code,
+        health_check_interval_seconds,
+        health_check_timeout_seconds,
+        healthy_threshold_count,
+        unhealthy_threshold_count,
+        elb_https_listener_arn
+    ):
+        self.__dynamic_alb = {
+            'load_balancer_arn': load_balancer_arn,
+            'target_group_name': target_group_name,
+            'container_name': container_name,
+            'container_port': container_port,
+            'container_protocol': container_protocol,
+            'host_rule': host_rule,
+            'health_check_port': health_check_port,
+            'health_check_protocol': health_check_protocol,
+            'vpc_id': vpc_id,
+            'health_check_path': health_check_path,
+            'health_check_http_code': health_check_http_code,
+            'health_check_interval_seconds': health_check_interval_seconds,
+            'health_check_timeout_seconds': health_check_timeout_seconds,
+            'healthy_threshold_count': healthy_threshold_count,
+            'unhealthy_threshold_count': unhealthy_threshold_count,
+            'elb_https_listener_arn': elb_https_listener_arn,
+        }
+
+    @property
     def vpc_configuration(self):
         if self.__aws_service and self.__aws_service['networkConfiguration'] and not self.__vpc_configuration:
             self.__vpc_configuration = self.__aws_service['networkConfiguration']['awsvpcConfiguration']
@@ -455,6 +503,10 @@ class Service(object):
             if self.load_balancer:
                 for c in self.active_task_definition.containers:
                     if c.name == self.load_balancer['container_name']:
+                        return c.image.split(":")[1]
+            elif self.dynamic_alb:
+                for c in self.active_task_definition.containers:
+                    if c.name == self.dynamic_alb['container_name']:
                         return c.image.split(":")[1]
             else:
                 # Just give the first container's version?
@@ -532,6 +584,8 @@ class Service(object):
                     'containerName': self.load_balancer['container_name'],
                     'containerPort': self.load_balancer['container_port'],
                 })
+        if self.dynamic_alb:
+            r['loadBalancers'] = [copy(self.__dynamic_alb)]
         if self.launchType == 'FARGATE':
             r['networkConfiguration'] = {
                 'awsvpcConfiguration': self.vpc_configuration
@@ -570,6 +624,77 @@ class Service(object):
                 service_discovery.create()
             else:
                 print("Service Discovery already exists with this name")
+
+    def _create_dynamic_tg_if_missing(self):
+        alb = get_boto3_session().client('elbv2')
+        existing_tgs = alb.describe_target_groups(
+            Names=[self.dynamic_alb['target_group_name']],
+        )
+
+        if existing_tgs['TargetGroups']:
+            tg_arn = existing_tgs['TargetGroups'][0]['TargetGroupArn']
+        else:
+            response = alb.create_target_group(
+                Name=self.dynamic_alb['target_group_name'],
+                Protocol=self.dynamic_alb['container_protocol'],
+                Port=self.dynamic_alb['container_port'],
+                VpcId=self.dynamic_alb['vpc_id'],
+                HealthCheckProtocol=self.dynamic_alb['health_check_protocol'],
+                HealthCheckPort=str(self.dynamic_alb['health_check_port']),
+                HealthCheckPath=self.dynamic_alb['health_check_path'],
+                HealthCheckIntervalSeconds=self.dynamic_alb['health_check_interval_seconds'],
+                HealthCheckTimeoutSeconds=self.dynamic_alb['health_check_timeout_seconds'],
+                HealthyThresholdCount=self.dynamic_alb['healthy_threshold_count'],
+                UnhealthyThresholdCount=self.dynamic_alb['unhealthy_threshold_count'],
+                Matcher={
+                    'HttpCode': self.dynamic_alb['health_check_http_code']
+                },
+            )
+            tg_arn = response['TargetGroups'][0]['TargetGroupArn']
+
+        response = alb.describe_rules(ListenerArn=self.dynamic_alb['elb_https_listener_arn'])
+
+        url_exists = False
+
+        try:
+            max_priority = max([int(r['Priority']) for r in response['Rules']])
+        except ValueError:
+            max_priority = 0
+
+        for rule in response['Rules']:
+            for cond in rule['Conditions']:
+                if cond['Field'] == 'host-header':
+                    for val in cond['Values']:
+                        if val == self.dynamic_alb['host_rule']:
+                            url_exists = True
+                            if tg_arn not in [i['TargetGroupArn'] for i in rule['Actions'] if i['Type'] == 'forward']:
+                                # we have found the URL but not the appropriate target group, add it as a destination
+                                new_actions = rule['Actions']
+                                new_actions.insert(
+                                    0,
+                                    {
+                                        'TargetGroupArn': tg_arn,
+                                        'Type': 'forward',
+                                        'Order': 1,
+                                    },
+                                )
+                                alb.modify_rule(
+                                    RuleArn=rule['RuleArn'],
+                                    Actions=new_actions,
+                                )
+                            break
+
+        if not url_exists:
+            alb.create_rule(
+                ListenerArn=self.dynamic_alb['elb_https_listener_arn'],
+                Conditions=[{'Field': 'host-header', 'Values': [self.dynamic_alb['host_rule']]}],
+                Priority=max_priority + 1,
+                Actions={
+                    'TargetGroupArn': tg_arn,
+                    'Type': 'forward',
+                    'Order': 1,
+                },
+            )
 
     def from_yaml(self, yml):
         """
@@ -610,6 +735,29 @@ class Service(object):
                     yml['load_balancer']['container_name'],
                     yml['load_balancer']['container_port'],
                 )
+
+        if 'dynamic_alb' in yml:
+            self.set_dynamic_alb(
+                yml['dynamic_alb']['load_balancer_arn'],
+                yml['dynamic_alb']['target_group_name'],
+                yml['dynamic_alb']['container_name'],
+                yml['dynamic_alb']['container_port'],
+                yml['dynamic_alb']['container_protocol'],
+                yml['dynamic_alb']['host_rule'],
+                yml['dynamic_alb']['health_check_port'],
+                yml['dynamic_alb']['health_check_protocol'],
+                yml['dynamic_alb']['vpc_id'],
+                yml['dynamic_alb']['health_check_path'],
+                yml['dynamic_alb']['health_check_http_code'],
+                yml['dynamic_alb']['health_check_interval_seconds'],
+                yml['dynamic_alb']['health_check_timeout_seconds'],
+                yml['dynamic_alb']['healthy_threshold_count'],
+                yml['dynamic_alb']['unhealthy_threshold_count'],
+                yml['dynamic_alb']['elb_https_listener_arn'],
+            )
+
+            self._create_dynamic_tg_if_missing()
+
         if 'vpc_configuration' in yml:
             self.set_vpc_configuration(
                 yml['vpc_configuration']['subnets'],
@@ -927,13 +1075,28 @@ class Service(object):
                 if state['State'] != "InService" or state['Description'] != "N/A":
                     success = False
                 print(state['InstanceId'], state['State'], state['Description'])
-        elif lbtype == 'alb':
+        elif lbtype == 'alb' or self.dynamic_alb:
             print("")
             print("Load Balancer")
             alb = get_boto3_session().client('elbv2')
-            response = alb.describe_target_health(
-                TargetGroupArn=self.load_balancer['target_group_arn']
-            )
+
+            if self.dynamic_alb:
+                existing_tgs = alb.describe_target_groups(
+                    Names=[self.dynamic_alb['target_group_name']],
+                )
+
+                if not existing_tgs['TargetGroups']:
+                    raise RuntimeError(
+                        f'Target group not found: {self.dynamic_alb["target_group_name"]}',
+                    )
+                else:
+                    response = alb.describe_target_health(
+                        TargetGroupArn=existing_tgs['TargetGroups'][0]['TargetGroupArn']
+                    )
+            else:
+                response = alb.describe_target_health(
+                    TargetGroupArn=self.load_balancer['target_group_arn']
+                )
             if len(response['TargetHealthDescriptions']) < desired_count:
                 success = False
             for desc in response['TargetHealthDescriptions']:

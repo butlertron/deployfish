@@ -201,6 +201,11 @@ class Config(object):
         self.__do_dict(self.__raw['aws'], {})
 
     def replace_terraform(self):
+        if isinstance(self.__raw['terraform'], dict):
+            self.__do_dict(self.__raw['terraform'], {})
+        elif isinstance(self.__raw['terraform'], list):
+            self.__do_list(self.__raw['terraform'], {})
+
         for service in self.__raw['services']:
             replacers = {
                 'environment': service.get('environment', 'prod'),
