@@ -114,6 +114,7 @@ class Service(object):
         self._ecr_repo = None
         self.__defaults()
         self.service_tags = []
+        self.__dynamic_alb = {}
         self.from_yaml(yml)
         self.from_aws()
 
@@ -627,11 +628,14 @@ class Service(object):
 
     def _create_dynamic_tg_if_missing(self):
         alb = get_boto3_session().client('elbv2')
-        existing_tgs = alb.describe_target_groups(
-            Names=[self.dynamic_alb['target_group_name']],
-        )
+        try:
+            existing_tgs = alb.describe_target_groups(
+                Names=[self.dynamic_alb['target_group_name']],
+            )
+        except botocore.exceptions.ClientError:
+            existing_tgs = {}
 
-        if existing_tgs['TargetGroups']:
+        if existing_tgs.get('TargetGroups'):
             tg_arn = existing_tgs['TargetGroups'][0]['TargetGroupArn']
         else:
             response = alb.create_target_group(
@@ -647,7 +651,7 @@ class Service(object):
                 HealthyThresholdCount=self.dynamic_alb['healthy_threshold_count'],
                 UnhealthyThresholdCount=self.dynamic_alb['unhealthy_threshold_count'],
                 Matcher={
-                    'HttpCode': self.dynamic_alb['health_check_http_code']
+                    'HttpCode': str(self.dynamic_alb['health_check_http_code'])
                 },
             )
             tg_arn = response['TargetGroups'][0]['TargetGroupArn']
@@ -689,11 +693,11 @@ class Service(object):
                 ListenerArn=self.dynamic_alb['elb_https_listener_arn'],
                 Conditions=[{'Field': 'host-header', 'Values': [self.dynamic_alb['host_rule']]}],
                 Priority=max_priority + 1,
-                Actions={
+                Actions=[{
                     'TargetGroupArn': tg_arn,
                     'Type': 'forward',
                     'Order': 1,
-                },
+                }],
             )
 
     def from_yaml(self, yml):

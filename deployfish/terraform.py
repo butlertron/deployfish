@@ -51,8 +51,8 @@ class Terraform(dict):
         if int(minor) >= 12:
             for key, value in tfstate['outputs'].items():
                 if key in self:
-                    raise RuntimeError(
-                        'Key {key} already exists / is defined more than once!'.format(key=key)
+                    print(
+                        'Warning: key {key} already exists / is defined more than once! Overwriting...'.format(key=key)
                     )
                 self[key] = value
         else:
@@ -60,8 +60,8 @@ class Terraform(dict):
                 if i['path'] == [u'root']:
                     for key, value in i['outputs'].items():
                         if key in self:
-                            raise RuntimeError(
-                                'Key {key} already exists / is defined more than once!'.format(
+                            print(
+                                'Warning: key {key} already exists / is defined more than once! Overwriting...'.format(
                                     key=key
                                 )
                             )
@@ -70,13 +70,15 @@ class Terraform(dict):
     def get_terraform_state(self, config):
         if isinstance(config, dict):
             self._process_statefile(config['statefile'], config)
+            self.lookups = config['lookups']
         elif isinstance(config, list):
+            self.lookups = {}
             for statefile in config:
                 self._process_statefile(statefile['statefile'], statefile)
+                self.lookups.update(statefile['lookups'])
 
     def load_yaml(self, yml):
         self.get_terraform_state(yml)
-        self.lookups = yml['lookups']
 
     def lookup(self, attr, keys):
         return self[self.lookups[attr].format(**keys)]['value']

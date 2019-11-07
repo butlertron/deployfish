@@ -40,7 +40,7 @@ def print_service_info(service):
         click.secho('      container_port    : {}'.format(service.load_balancer['container_port']), fg="cyan")
     if service.dynamic_alb:
         click.secho('    dynamic_alb:', fg="cyan")
-        for key, val in service.__dynamic_alb:
+        for key, val in service.dynamic_alb.items():
             click.secho(f'      {key}  : {val}', fg="cyan")
     if service.scaling:
         click.secho('    application_scaling:', fg="cyan")
