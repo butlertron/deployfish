@@ -21,12 +21,11 @@ class Terraform(dict):
     def __init__(self, yml=None):
         self.load_yaml(yml)
 
-    def _get_state_file_from_s3(self, config):
-        state_file_url = config['statefile']
-        if 'profile' in config:
+    def _get_state_file_from_s3(self, state_file_url, full_config):
+        if 'profile' in full_config:
             session = boto3.session.Session(
-                profile_name=config['profile'],
-                region_name=config.get('region', None),
+                profile_name=full_config['profile'],
+                region_name=full_config.get('region', None),
             )
         else:
             session = get_boto3_session()
@@ -39,26 +38,47 @@ class Terraform(dict):
             state_file = key.get()["Body"].read().decode('utf-8')
         except ClientError as ex:
             if ex.response['Error']['Code'] == 'NoSuchKey':
-                raise NoSuchStateFile("Could not find Terraform state file {}".format(state_file_url))
+                raise NoSuchStateFile("Could not find Terraform state file {}".format(
+                    state_file_url
+                ))
             else:
                 raise ex
         return json.loads(state_file)
 
-    def get_terraform_state(self, state_file_url):
-        tfstate = self._get_state_file_from_s3(state_file_url)
+    def _process_statefile(self, state_file_url, full_config):
+        tfstate = self._get_state_file_from_s3(state_file_url, full_config)
         major, minor, patch = tfstate['terraform_version'].split('.')
         if int(minor) >= 12:
             for key, value in tfstate['outputs'].items():
+                if key in self:
+                    print(
+                        'Warning: key {key} already exists / is defined more than once! Overwriting...'.format(key=key)
+                    )
                 self[key] = value
         else:
             for i in tfstate['modules']:
                 if i['path'] == [u'root']:
                     for key, value in i['outputs'].items():
+                        if key in self:
+                            print(
+                                'Warning: key {key} already exists / is defined more than once! Overwriting...'.format(
+                                    key=key
+                                )
+                            )
                         self[key] = value
+
+    def get_terraform_state(self, config):
+        if isinstance(config, dict):
+            self._process_statefile(config['statefile'], config)
+            self.lookups = config['lookups']
+        elif isinstance(config, list):
+            self.lookups = {}
+            for statefile in config:
+                self._process_statefile(statefile['statefile'], statefile)
+                self.lookups.update(statefile['lookups'])
 
     def load_yaml(self, yml):
         self.get_terraform_state(yml)
-        self.lookups = yml['lookups']
 
     def lookup(self, attr, keys):
         return self[self.lookups[attr].format(**keys)]['value']
