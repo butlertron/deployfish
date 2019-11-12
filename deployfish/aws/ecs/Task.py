@@ -931,6 +931,7 @@ class Task(object):
         self.platform_version = "LATEST"
         self.cluster_arn = ''
         self.group = None
+        self.__cw_log_groups = []
 
     def set_vpc_configuration(self, yml):
         self.vpc_configuration = {
@@ -1030,6 +1031,11 @@ class Task(object):
             self.scheduler_target_name = f'{self.scheduler_name}-target'
         if 'group' in yml:
             self.group = yml['group']
+        if 'cw_log_groups' in yml:
+            self.__cw_log_groups = yml['cw_log_groups']
+            for g in self.__cw_log_groups:
+                if not g.get('name'):
+                    raise RuntimeError('Missing log group name!')
 
         self._get_cluster_arn()
 
@@ -1126,12 +1132,22 @@ class Task(object):
             else:
                 return
 
+    def __create_cw_log_groups(self):
+        cw = get_boto3_session().client('logs')
+        for g in self.__cw_log_groups:
+            tags = flatten_tags(g.get('tags', {}))
+            try:
+                cw.create_log_group(logGroupName=g['name'], tags=tags)
+            except cw.exceptions.ResourceAlreadyExistsException:
+                print('Log group {name} already exists, skipping.'.format(name=g['name']))
+
     def run(self, wait):
         """
         Run the task. If wait is specified, show the status and logs from the task.
         :param wait: Should we wait for the task to finish and display any logs
         :type waite: bool
         """
+        self.__create_cw_log_groups()
         self.register_task_definition()
         if not self.active_task_definition:
             # problem
@@ -1149,6 +1165,7 @@ class Task(object):
         """
         if not self.schedule_expression:
             return
+        self.__create_cw_log_groups()
         self.register_task_definition()
         self.scheduler.schedule()
         click.secho(f"Scheduled task {self.taskName}", fg="cyan")
@@ -1163,6 +1180,7 @@ class Task(object):
         """
         Update the task definition as appropriate.
         """
+        self.__create_cw_log_groups()
         self.desired_task_definition.create()
         self.from_aws()
 
