@@ -1128,6 +1128,9 @@ class Task(object):
                 status = response['tasks'][0]['lastStatus']
                 print("\tCurrent status: {}".format(status))
                 if status == "STOPPED":
+                    for cont in response['tasks'][0]['containers']:
+                        if cont.get('exitCode', 1) != 0:
+                            raise RuntimeError('Task exited with failure!')
                     print("")
                     return
             else:
