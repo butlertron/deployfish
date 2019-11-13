@@ -26,6 +26,7 @@ from deployfish.aws.service_discovery import ServiceDiscovery
 
 from .Task import TaskDefinition
 from .Task import HelperTask
+from .utils import flatten_tags
 
 
 def _capitalize_keys_in_list(orig_list):
@@ -33,15 +34,6 @@ def _capitalize_keys_in_list(orig_list):
     for d in orig_list:
         l.append(dict((k.capitalize(), v) for k, v in d.items()))
     return l
-
-
-def flatten_tags(l):
-    r = {}
-    for e in l:
-        if not e.get('key') or not e.get('value'):
-            raise RuntimeError('Missing key or value for tag!')
-        r[e['key']] = e['value']
-    return r
 
 
 def get_tags(yml):

@@ -18,6 +18,7 @@ from deployfish.aws import get_boto3_session
 from deployfish.aws.systems_manager import ParameterStore
 
 from .TaskScheduler import TaskScheduler
+from .utils import flatten_tags
 
 
 class VolumeMixin(object):
