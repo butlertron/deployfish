@@ -578,7 +578,13 @@ class Service(object):
                     'containerPort': self.load_balancer['container_port'],
                 })
         if self.dynamic_alb:
-            r['loadBalancers'] = [copy(self.__dynamic_alb)]
+            r['loadBalancers'] = [
+                {
+                    'targetGroupArn': self.__dynamic_alb['target_group_arn'],
+                    'containerName': self.__dynamic_alb['container_name'],
+                    'containerPort': self.__dynamic_alb['container_port'],
+                }
+            ]
         if self.launchType == 'FARGATE':
             r['networkConfiguration'] = {
                 'awsvpcConfiguration': self.vpc_configuration
@@ -691,6 +697,8 @@ class Service(object):
                     'Order': 1,
                 }],
             )
+
+        self.__dynamic_alb['target_group_arn'] = tg_arn
 
     def from_yaml(self, yml):
         """
