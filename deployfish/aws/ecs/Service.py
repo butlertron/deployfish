@@ -1130,7 +1130,7 @@ class Service(object):
             print("Waiting...")
             time.sleep(self.grace_period)
         else:
-            for i in range(int(self.grace_period) / 10):
+            for i in range(int(self.grace_period / 10)):
                 time.sleep(self.grace_period / (self.grace_period / 10))
                 print("Waiting...")
 
@@ -1146,7 +1146,7 @@ class Service(object):
             else:
                 print("\nDeployment unready\n")
         else:
-            for i in range(int(self.timeout) / 10):
+            for i in range(int(self.timeout / 10)):
                 print("Waiting...")
                 time.sleep(self.timeout / (self.timeout / 10))
                 success = self._show_current_status()
