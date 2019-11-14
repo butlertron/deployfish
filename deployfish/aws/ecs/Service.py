@@ -13,7 +13,6 @@ import string
 import subprocess
 from tempfile import NamedTemporaryFile
 import time
-import tzlocal
 
 import botocore
 import docker
@@ -1122,7 +1121,6 @@ class Service(object):
         """
         Wait until AWS reports the service as "stable".
         """
-        tz = tzlocal.get_localzone()
         print('\nWaiting for grace period...\n')
 
         # splitting in buckets so Circle doesn't time out on blank output
@@ -1133,8 +1131,6 @@ class Service(object):
             for i in range(int(self.grace_period / 10)):
                 time.sleep(self.grace_period / (self.grace_period / 10))
                 print("Waiting...")
-
-        self.its_run_start_time = datetime.now(tz)
 
         if self.timeout < 10:
             print("Waiting...")
