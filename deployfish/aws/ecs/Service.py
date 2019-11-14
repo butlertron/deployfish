@@ -1121,19 +1121,19 @@ class Service(object):
         """
         Wait until AWS reports the service as "stable".
         """
-        print('\nWaiting for grace period...\n')
+        print(f'\nWaiting for grace period: {self.grace_period} sec...\n')
 
         # splitting in buckets so Circle doesn't time out on blank output
         if self.grace_period < 10:
-            print("Waiting...")
+            print("Waiting for grace period to be over...")
             time.sleep(self.grace_period)
         else:
             for i in range(int(self.grace_period / 10)):
                 time.sleep(self.grace_period / (self.grace_period / 10))
-                print("Waiting...")
+                print("Waiting for grace period to be over...")
 
         if self.timeout < 10:
-            print("Waiting...")
+            print('Waiting for timeout: {self.timeout} sec...')
             time.sleep(self.timeout)
             success = self._show_current_status()
             if success:
@@ -1143,7 +1143,7 @@ class Service(object):
                 print("\nDeployment unready\n")
         else:
             for i in range(int(self.timeout / 10)):
-                print("Waiting...")
+                print('Waiting for timeout: {self.timeout} sec...')
                 time.sleep(self.timeout / (self.timeout / 10))
                 success = self._show_current_status()
                 if success:
