@@ -1129,7 +1129,7 @@ class Service(object):
         if self.grace_period < 10:
             time.sleep(self.grace_period)
         else:
-            for i in range(self.grace_period / 10):
+            for i in range(int(self.grace_period) / 10):
                 time.sleep(self.grace_period / (self.grace_period / 10))
 
         self.its_run_start_time = datetime.now(tz)
@@ -1143,7 +1143,7 @@ class Service(object):
             else:
                 print("\nDeployment unready\n")
         else:
-            for i in range(self.timeout / 10):
+            for i in range(int(self.timeout) / 10):
                 time.sleep(self.timeout / (self.timeout / 10))
                 success = self._show_current_status()
                 if success:

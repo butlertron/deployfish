@@ -1146,7 +1146,7 @@ class Task(object):
             time.sleep(self.timeout)
             return self._check_done()
         else:
-            for i in range(self.timeout / 10):
+            for i in range(int(self.timeout) / 10):
                 time.sleep(self.timeout / (self.timeout / 10))
                 if self._check_done():
                     return
