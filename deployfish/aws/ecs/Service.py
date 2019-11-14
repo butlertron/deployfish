@@ -1127,14 +1127,17 @@ class Service(object):
 
         # splitting in buckets so Circle doesn't time out on blank output
         if self.grace_period < 10:
+            print("Waiting...")
             time.sleep(self.grace_period)
         else:
             for i in range(int(self.grace_period) / 10):
                 time.sleep(self.grace_period / (self.grace_period / 10))
+                print("Waiting...")
 
         self.its_run_start_time = datetime.now(tz)
 
         if self.timeout < 10:
+            print("Waiting...")
             time.sleep(self.timeout)
             success = self._show_current_status()
             if success:
@@ -1144,6 +1147,7 @@ class Service(object):
                 print("\nDeployment unready\n")
         else:
             for i in range(int(self.timeout) / 10):
+                print("Waiting...")
                 time.sleep(self.timeout / (self.timeout / 10))
                 success = self._show_current_status()
                 if success:
