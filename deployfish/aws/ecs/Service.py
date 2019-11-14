@@ -1133,7 +1133,7 @@ class Service(object):
                 print("Waiting for grace period to be over...")
 
         if self.timeout < 10:
-            print('Waiting for timeout: {self.timeout} sec...')
+            print(f'Waiting for timeout: {self.timeout} sec...')
             time.sleep(self.timeout)
             success = self._show_current_status()
             if success:
@@ -1143,7 +1143,7 @@ class Service(object):
                 print("\nDeployment unready\n")
         else:
             for i in range(int(self.timeout / 10)):
-                print('Waiting for timeout: {self.timeout} sec...')
+                print(f'Waiting for timeout: {self.timeout} sec...')
                 time.sleep(self.timeout / (self.timeout / 10))
                 success = self._show_current_status()
                 if success:
