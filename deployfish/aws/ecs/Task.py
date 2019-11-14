@@ -1113,7 +1113,7 @@ class Task(object):
             nextToken = response['nextForwardToken']
             kwargs['nextToken'] = nextToken
 
-    def _check_done(self):
+    def _check_done(self, cluster):
         response = self.ecs.describe_tasks(
             cluster=cluster,
             tasks=[self.taskarn]
@@ -1145,12 +1145,12 @@ class Task(object):
         if self.timeout < 10:
             print("Waiting...")
             time.sleep(self.timeout)
-            return self._check_done()
+            return self._check_done(cluster)
         else:
             for i in range(int(self.timeout / 10)):
                 print("Waiting...")
                 time.sleep(self.timeout / (self.timeout / 10))
-                if self._check_done():
+                if self._check_done(cluster):
                     return
 
     def __create_cw_log_groups(self):
