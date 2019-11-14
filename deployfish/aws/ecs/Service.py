@@ -651,6 +651,7 @@ class Service(object):
                 Matcher={
                     'HttpCode': str(self.dynamic_alb['health_check_http_code'])
                 },
+                TargetType='ip',
             )
             tg_arn = response['TargetGroups'][0]['TargetGroupArn']
 
