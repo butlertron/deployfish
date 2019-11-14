@@ -915,6 +915,7 @@ class Task(object):
         self.desired_count = 1
         self._launchType = 'EC2'
         self.cluster_specified = False
+        self.timeout = 600
         self.__defaults()
         self.from_yaml(yml)
         self.from_aws()
@@ -932,6 +933,7 @@ class Task(object):
         self.platform_version = "LATEST"
         self.cluster_arn = ''
         self.group = None
+        self.timeout = 600
         self.__cw_log_groups = []
 
     def set_vpc_configuration(self, yml):
@@ -990,6 +992,8 @@ class Task(object):
         :type yml: dict
         """
         self.taskName = yml['name']
+        if 'timeout' in yml:
+            self.timeout = yml['timeout']
         if 'launch_type' in yml:
             self.launchType = yml['launch_type']
         self.environment = yml.get('environment', 'undefined')
@@ -1109,6 +1113,25 @@ class Task(object):
             nextToken = response['nextForwardToken']
             kwargs['nextToken'] = nextToken
 
+    def _check_done(self):
+        response = self.ecs.describe_tasks(
+            cluster=cluster,
+            tasks=[self.taskarn]
+        )
+        if 'tasks' in response and len(response['tasks']) > 0:
+            status = response['tasks'][0]['lastStatus']
+            print("\tCurrent status: {}".format(status))
+            if status == "STOPPED":
+                for cont in response['tasks'][0]['containers']:
+                    if cont.get('exitCode', 1) != 0:
+                        raise RuntimeError('Task exited with failure!')
+                print("")
+                return True
+            else:
+                return False
+
+        return True
+
     def _wait_until_stopped(self):
         """
         Inspect and display the status of the task until it has finished.
@@ -1118,23 +1141,15 @@ class Task(object):
             cluster = task['clusterArn']
             self.taskarn = task['taskArn']
         print("Waiting for task to complete...\n")
-        for i in range(40):
-            time.sleep(5)
-            response = self.ecs.describe_tasks(
-                cluster=cluster,
-                tasks=[self.taskarn]
-            )
-            if 'tasks' in response and len(response['tasks']) > 0:
-                status = response['tasks'][0]['lastStatus']
-                print("\tCurrent status: {}".format(status))
-                if status == "STOPPED":
-                    for cont in response['tasks'][0]['containers']:
-                        if cont.get('exitCode', 1) != 0:
-                            raise RuntimeError('Task exited with failure!')
-                    print("")
+
+        if self.timeout < 10:
+            time.sleep(self.timeout)
+            return self._check_done()
+        else:
+            for i in range(self.timeout / 10):
+                time.sleep(self.timeout / (self.timeout / 10))
+                if self._check_done():
                     return
-            else:
-                return
 
     def __create_cw_log_groups(self):
         cw = get_boto3_session().client('logs')

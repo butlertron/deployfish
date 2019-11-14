@@ -104,6 +104,8 @@ class Service(object):
         self._launchType = 'EC2'
         self.__service_discovery = []
         self._ecr_repo = None
+        self.grace_period = 0
+        self.timeout = 600
         self.__defaults()
         self.service_tags = []
         self.__dynamic_alb = {}
@@ -122,6 +124,8 @@ class Service(object):
         self.__placement_strategy = []
         self.__schedulingStrategy = "REPLICA"
         self.__cw_log_groups = []
+        self.grace_period = 0
+        self.timeout = 600
 
     def __get_service(self):
         """
@@ -711,6 +715,10 @@ class Service(object):
         """
         self.serviceName = yml['name']
         self.clusterName = yml['cluster']
+        if 'grace_period' in yml:
+            self.grace_period = yml['grace_period']
+        if 'timeout' in yml:
+            self.timeout = yml['timeout']
         if 'launch_type' in yml:
             self.launchType = yml['launch_type']
         self.environment = yml.get('environment', 'undefined')
@@ -1115,16 +1123,34 @@ class Service(object):
         Wait until AWS reports the service as "stable".
         """
         tz = tzlocal.get_localzone()
+        print('\nWaiting for grace period...\n')
+
+        # splitting in buckets so Circle doesn't time out on blank output
+        if self.grace_period < 10:
+            time.sleep(self.grace_period)
+        else:
+            for i in range(self.grace_period / 10):
+                time.sleep(self.grace_period / (self.grace_period / 10))
+
         self.its_run_start_time = datetime.now(tz)
 
-        for i in range(40):
-            time.sleep(15)
+        if self.timeout < 10:
+            time.sleep(self.timeout)
             success = self._show_current_status()
             if success:
                 print("\nDeployment successful.\n")
                 return True
             else:
                 print("\nDeployment unready\n")
+        else:
+            for i in range(self.timeout / 10):
+                time.sleep(self.timeout / (self.timeout / 10))
+                success = self._show_current_status()
+                if success:
+                    print("\nDeployment successful.\n")
+                    return True
+                else:
+                    print("\nDeployment unready\n")
 
         print('Deployment failed...')
 
