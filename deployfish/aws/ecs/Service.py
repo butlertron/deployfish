@@ -123,8 +123,6 @@ class Service(object):
         self.__placement_strategy = []
         self.__schedulingStrategy = "REPLICA"
         self.__cw_log_groups = []
-        self.grace_period = 0
-        self.timeout = 600
 
     def __get_service(self):
         """
@@ -1132,8 +1130,9 @@ class Service(object):
                 time.sleep(self.grace_period / (self.grace_period / 10))
                 print("Waiting for grace period to be over...")
 
+        print(f'Waiting for deploy or timeout: {self.timeout} sec...')
         if self.timeout < 10:
-            print(f'Waiting for timeout: {self.timeout} sec...')
+            print(f'Waiting...')
             time.sleep(self.timeout)
             success = self._show_current_status()
             if success:
@@ -1143,7 +1142,7 @@ class Service(object):
                 print("\nDeployment unready\n")
         else:
             for i in range(int(self.timeout / 10)):
-                print(f'Waiting for timeout: {self.timeout} sec...')
+                print(f'Waiting...')
                 time.sleep(self.timeout / (self.timeout / 10))
                 success = self._show_current_status()
                 if success:

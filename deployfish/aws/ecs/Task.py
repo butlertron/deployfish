@@ -933,7 +933,6 @@ class Task(object):
         self.platform_version = "LATEST"
         self.cluster_arn = ''
         self.group = None
-        self.timeout = 600
         self.__cw_log_groups = []
 
     def set_vpc_configuration(self, yml):
@@ -1140,7 +1139,7 @@ class Task(object):
             task = self.response['tasks'][0]
             cluster = task['clusterArn']
             self.taskarn = task['taskArn']
-        print("Waiting for task to complete...\n")
+        print(f'Waiting for task to complete, timeout:{self.timeout}...\n')
 
         if self.timeout < 10:
             print("Waiting...")
