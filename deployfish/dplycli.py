@@ -75,6 +75,8 @@ def print_task_definition(task_definition, indent="  "):
         if c.extraHosts:
             for h in c.extraHosts:
                 click.secho('{}        extra_host           : {}'.format(indent, h), fg="cyan")
+        if c.firelensConfiguration:
+            click.secho('{}        firelensConfiguration           : {}'.format(indent, c.firelensConfiguration), fg="cyan")
 
 
 def print_sorted_parameters(parameters):  # NOQA
