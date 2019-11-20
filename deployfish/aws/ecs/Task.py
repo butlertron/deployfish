@@ -128,6 +128,7 @@ class ContainerDefinition(VolumeMixin):
         self._secrets = []
         self.logConfiguration = None
         self.local_image = None
+        self.firelensConfiguration = None
 
         if 'logConfiguration' in aws:
             self.logConfiguration = LogConfiguration(aws['logConfiguration'])
@@ -370,6 +371,8 @@ class ContainerDefinition(VolumeMixin):
                     r['linuxParameters']['capabilities']['drop'] = self.cap_drop
             if self.tmpfs:
                 r['linuxParameters']['tmpfs'] = self.tmpfs
+        if self.firelensConfiguration:
+            r['firelensConfiguration'] = self.firelensConfiguration
         return r
 
     def update_task_labels(self, family_revisions):
@@ -555,6 +558,8 @@ class ContainerDefinition(VolumeMixin):
                 if 'mount_options' in tc and type(tc['mount_options']) == list:
                     tc_append['mountOptions'] = tc['mount_options']
                 self.tmpfs.append(tc_append)
+        if 'firelensConfiguration' in yml:
+            self.firelensConfiguration = yml['firelensConfiguration']
 
     def __str__(self):
         """
