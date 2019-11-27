@@ -921,6 +921,7 @@ class Task(object):
         self._launchType = 'EC2'
         self.cluster_specified = False
         self.timeout = 600
+        self.exit_codes_overrides = {}
         self.__defaults()
         self.from_yaml(yml)
         self.from_aws()
@@ -1045,6 +1046,11 @@ class Task(object):
             for g in self.__cw_log_groups:
                 if not g.get('name'):
                     raise RuntimeError('Missing log group name!')
+
+        if 'containers' in yml:
+            for c in yml['containers']:
+                if 'valid_exit_codes' in c:
+                    self.exit_codes_overrides[c['name']] = int(c['valid_exit_codes'])
 
         self._get_cluster_arn()
 
