@@ -661,7 +661,7 @@ class Service(object):
         url_exists = False
 
         try:
-            max_priority = max([int(r['Priority']) if r['Priority'] != 'default' else -1 for r in response['Rules']])
+            max_priority = max([int(r['Priority']) if r['Priority'] != 'default' else 0 for r in response['Rules']])
         except ValueError:
             max_priority = 0
 
