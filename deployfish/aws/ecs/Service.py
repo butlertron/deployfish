@@ -663,7 +663,7 @@ class Service(object):
         try:
             max_priority = max([int(r['Priority']) for r in response['Rules']])
         except ValueError:
-            max_priority = 0
+            max_priority = 1
 
         for rule in response['Rules']:
             for cond in rule['Conditions']:
