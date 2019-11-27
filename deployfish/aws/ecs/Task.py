@@ -1134,8 +1134,8 @@ class Task(object):
             if status == "STOPPED":
                 for cont in response['tasks'][0]['containers']:
                     valid_codes = [0, ]
-                    if response['tasks'][0]['containers']['name'] in self.exit_codes_overrides:
-                        valid_codes = self.exit_codes_overrides[response['tasks'][0]['containers']['name']]
+                    if cont['name'] in self.exit_codes_overrides:
+                        valid_codes = self.exit_codes_overrides[cont['name']]
 
                     if cont.get('exitCode', 1) not in valid_codes:
                         raise RuntimeError('Task exited with failure!')
