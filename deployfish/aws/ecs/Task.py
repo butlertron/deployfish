@@ -1050,7 +1050,7 @@ class Task(object):
         if 'containers' in yml:
             for c in yml['containers']:
                 if 'valid_exit_codes' in c:
-                    self.exit_codes_overrides[c['name']] = int(c['valid_exit_codes'])
+                    self.exit_codes_overrides[c['name']] = [int(x) for x in c['valid_exit_codes']]
 
         self._get_cluster_arn()
 
