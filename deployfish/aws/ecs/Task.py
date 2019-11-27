@@ -921,6 +921,7 @@ class Task(object):
         self._launchType = 'EC2'
         self.cluster_specified = False
         self.timeout = 600
+        self.exit_codes_overrides = {}
         self.__defaults()
         self.from_yaml(yml)
         self.from_aws()
@@ -1046,6 +1047,11 @@ class Task(object):
                 if not g.get('name'):
                     raise RuntimeError('Missing log group name!')
 
+        if 'containers' in yml:
+            for c in yml['containers']:
+                if 'valid_exit_codes' in c:
+                    self.exit_codes_overrides[c['name']] = c['valid_exit_codes']
+
         self._get_cluster_arn()
 
     def from_aws(self):
@@ -1127,7 +1133,11 @@ class Task(object):
             print("\tCurrent status: {}".format(status))
             if status == "STOPPED":
                 for cont in response['tasks'][0]['containers']:
-                    if cont.get('exitCode', 1) != 0:
+                    valid_codes = [0, ]
+                    if response['tasks'][0]['containers']['name'] in self.exit_codes_overrides:
+                        valid_codes = self.exit_codes_overrides[response['tasks'][0]['containers']['name']]
+
+                    if cont.get('exitCode', 1) not in valid_codes:
                         raise RuntimeError('Task exited with failure!')
                 print("")
                 return True
