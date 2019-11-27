@@ -1127,7 +1127,11 @@ class Task(object):
             print("\tCurrent status: {}".format(status))
             if status == "STOPPED":
                 for cont in response['tasks'][0]['containers']:
-                    if cont.get('exitCode', 1) != 0:
+                    valid_codes = [0, ]
+                    if cont['name'] in self.exit_codes_overrides:
+                        valid_codes = self.exit_codes_overrides[cont['name']]
+
+                    if cont.get('exitCode', 1) not in valid_codes:
                         raise RuntimeError('Task exited with failure!')
                 print("")
                 return True
