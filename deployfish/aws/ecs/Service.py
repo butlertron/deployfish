@@ -970,7 +970,8 @@ class Service(object):
             deploymentConfiguration={
                 'maximumPercent': self.maximumPercent,
                 'minimumHealthyPercent': self.minimumHealthyPercent
-            }
+            },
+            desiredCount=self._desired_count,
         )
         self.__defaults()
         self.from_aws()
