@@ -446,7 +446,6 @@ class ContainerDefinition(VolumeMixin):
         :return: None
         """
         if not self.local_image:
-            print('No local image to push')
             return
 
         auth_data = self.ecr.get_authorization_token()
@@ -1189,7 +1188,6 @@ class Task(object):
             return
         kwargs = self.__render(self.active_task_definition.arn)
         self.response = self.ecs.run_task(**kwargs)
-        # print(self.response)
         if wait:
             self._wait_until_stopped()
             self._get_cloudwatch_logs()
